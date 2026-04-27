@@ -99,11 +99,12 @@ def configure_page() -> None:
     base_css = """
         <style>
             .intro-copy {
-                color: #ffffff;
+                color: var(--text-color, inherit);
                 font-size: 0.95rem;
                 line-height: 1.55;
                 margin-top: -0.35rem;
                 max-width: 980px;
+                opacity: 0.92;
             }
             div[data-testid="stExpander"] {
                 border-radius: 8px;
