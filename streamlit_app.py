@@ -53,12 +53,50 @@ BASE_HEADERS = [
 HEADER_FILL = PatternFill("solid", fgColor="1F2937")
 HEADER_FONT = Font(color="FFFFFF", bold=True)
 BODY_ALIGNMENT = Alignment(vertical="top", wrap_text=True)
+TRACK_HEADER_COLORS = [
+    "#FFADAD",
+    "#FFD6A5",
+    "#FDFFB6",
+    "#CAFFBF",
+    "#9BF6FF",
+    "#A0C4FF",
+    "#BDB2FF",
+    "#FFC6FF",
+]
+
+
+def build_track_header_css(max_track_count: int = 200) -> str:
+    css_rules: list[str] = []
+    for track_number in range(1, max_track_count + 1):
+        color = TRACK_HEADER_COLORS[(track_number - 1) % len(TRACK_HEADER_COLORS)]
+        css_rules.append(
+            f"""
+            .st-key-track-panel-{track_number} div[data-testid="stExpander"] details summary {{
+                background: {color};
+                border-radius: 8px 8px 0 0;
+                color: #1f2937;
+            }}
+            .st-key-track-panel-{track_number} div[data-testid="stExpander"] details summary:hover {{
+                background: color-mix(in srgb, {color} 92%, #000000);
+                color: #111827;
+            }}
+            .st-key-track-panel-{track_number} div[data-testid="stExpander"] details[open] summary {{
+                background: color-mix(in srgb, {color} 88%, #000000);
+                color: #111827;
+            }}
+            .st-key-track-panel-{track_number} div[data-testid="stExpander"] details summary * {{
+                color: inherit !important;
+                opacity: 1 !important;
+            }}
+            """
+        )
+
+    return "\n".join(css_rules)
 
 
 def configure_page() -> None:
-    st.set_page_config(page_title=APP_TITLE, layout="wide")
-    st.markdown(
-        """
+    track_header_css = build_track_header_css()
+    base_css = """
         <style>
             .intro-copy {
                 color: #ffffff;
@@ -122,8 +160,17 @@ def configure_page() -> None:
                 color: #d1d5db;
                 white-space: nowrap;
             }
-        </style>
-        """,
+            .meter-slash {
+                color: #d1d5db;
+                font-size: 1rem;
+                line-height: 2.4rem;
+                text-align: center;
+                padding-top: 0.2rem;
+            }
+        """
+    st.set_page_config(page_title=APP_TITLE, layout="wide")
+    st.markdown(
+        base_css + track_header_css + "\n</style>",
         unsafe_allow_html=True,
     )
 
@@ -416,6 +463,33 @@ def read_split_value(raw_value: object, default: float = 0.0) -> float:
     return parsed_value
 
 
+def parse_meter_components(raw_value: object) -> tuple[str, str]:
+    meter_text = compact_text(raw_value)
+    if not meter_text:
+        return "", ""
+
+    numerator, separator, denominator = meter_text.partition("/")
+    if not separator:
+        return meter_text, ""
+
+    return compact_text(numerator), compact_text(denominator)
+
+
+def format_meter_value(numerator: object, denominator: object) -> str:
+    numerator_text = compact_text(numerator)
+    denominator_text = compact_text(denominator)
+
+    if not numerator_text or not denominator_text:
+        return ""
+    if not numerator_text.isdigit() or not denominator_text.isdigit():
+        return ""
+
+    if int(numerator_text) <= 0 or int(denominator_text) <= 0:
+        return ""
+
+    return f"{int(numerator_text)}/{int(denominator_text)}"
+
+
 def read_cae_ipi_value(raw_value: object) -> int | None:
     if raw_value in ("", None):
         return None
@@ -608,258 +682,292 @@ def render_track_fields(
         int(st.session_state.get("track_count", 1))
     )
 
-    with st.expander(f"Track {track_number}", expanded=True):
-        key_value_key = f"track_{track_number}_key"
-        multi_key_toggle_key = f"track_{track_number}_multi_key_enabled"
-        multi_key_previous_key = f"track_{track_number}_multi_key_previous"
-        single_key_key = f"track_{track_number}_single_key"
-        multi_keys_key = f"track_{track_number}_multi_keys"
+    track_title = compact_text(st.session_state.get(f"track_{track_number}_title", ""))
+    expander_label = f"Track {track_number}"
+    if track_title:
+        expander_label = f"{expander_label} - {track_title}"
 
-        current_key_text = compact_text(st.session_state.get(key_value_key, ""))
-        current_key_values = [
-            key_option
-            for key_option in current_key_text.split(", ")
-            if key_option in key_options
-        ]
+    with st.container(key=f"track-panel-{track_number}"):
+        with st.expander(expander_label, expanded=True):
+            key_value_key = f"track_{track_number}_key"
+            multi_key_toggle_key = f"track_{track_number}_multi_key_enabled"
+            multi_key_previous_key = f"track_{track_number}_multi_key_previous"
+            single_key_key = f"track_{track_number}_single_key"
+            multi_keys_key = f"track_{track_number}_multi_keys"
+            meter_value_key = f"track_{track_number}_meter"
+            meter_numerator_key = f"track_{track_number}_meter_numerator"
+            meter_denominator_key = f"track_{track_number}_meter_denominator"
 
-        if multi_key_toggle_key not in st.session_state:
-            st.session_state[multi_key_toggle_key] = len(current_key_values) > 1
-        if single_key_key not in st.session_state:
-            st.session_state[single_key_key] = (
-                current_key_values[0] if current_key_values else None
+            current_key_text = compact_text(st.session_state.get(key_value_key, ""))
+            current_key_values = [
+                key_option
+                for key_option in current_key_text.split(", ")
+                if key_option in key_options
+            ]
+
+            if multi_key_toggle_key not in st.session_state:
+                st.session_state[multi_key_toggle_key] = len(current_key_values) > 1
+            if single_key_key not in st.session_state:
+                st.session_state[single_key_key] = (
+                    current_key_values[0] if current_key_values else None
+                )
+            if multi_keys_key not in st.session_state:
+                st.session_state[multi_keys_key] = current_key_values
+
+            if st.session_state.get(single_key_key) not in key_options:
+                st.session_state[single_key_key] = None
+            st.session_state[multi_keys_key] = [
+                key_option
+                for key_option in st.session_state.get(multi_keys_key, [])
+                if key_option in key_options
+            ]
+
+            meter_numerator, meter_denominator = parse_meter_components(
+                st.session_state.get(meter_value_key, "")
             )
-        if multi_keys_key not in st.session_state:
-            st.session_state[multi_keys_key] = current_key_values
+            st.session_state.setdefault(meter_numerator_key, meter_numerator)
+            st.session_state.setdefault(meter_denominator_key, meter_denominator)
 
-        if st.session_state.get(single_key_key) not in key_options:
-            st.session_state[single_key_key] = None
-        st.session_state[multi_keys_key] = [
-            key_option
-            for key_option in st.session_state.get(multi_keys_key, [])
-            if key_option in key_options
-        ]
+            label_cols = st.columns([3.2, 1.0, 1.45, 0.55, 1.0])
+            with label_cols[0]:
+                st.markdown("Title:")
+            with label_cols[1]:
+                st.markdown("BPM:")
+            with label_cols[2]:
+                st.markdown("Key:")
+            with label_cols[3]:
+                st.markdown("Multi-Key?")
+            with label_cols[4]:
+                st.markdown("Meter:")
 
-        label_cols = st.columns([3.2, 1.0, 1.45, 0.55, 1.0])
-        with label_cols[0]:
-            st.markdown("Title:")
-        with label_cols[1]:
-            st.markdown("BPM:")
-        with label_cols[2]:
-            st.markdown("Key:")
-        with label_cols[3]:
-            st.markdown("Multi-Key?")
-        with label_cols[4]:
-            st.markdown("Meter:")
-
-        multi_key_enabled = st.session_state.get(multi_key_toggle_key, False)
-        previous_multi_key_enabled = st.session_state.get(
-            multi_key_previous_key,
-            multi_key_enabled,
-        )
-        input_cols = st.columns([3.2, 1.0, 1.45, 0.55, 1.0])
-        with input_cols[0]:
-            st.text_input(
-                "Title:",
-                key=f"track_{track_number}_title",
-                label_visibility="collapsed",
-            )
-        with input_cols[1]:
-            st.number_input(
-                "BPM:",
-                min_value=0,
-                max_value=400,
-                step=1,
-                format="%d",
-                key=f"track_{track_number}_bpm",
-                label_visibility="collapsed",
-            )
-        with input_cols[2]:
             multi_key_enabled = st.session_state.get(multi_key_toggle_key, False)
-            if multi_key_enabled != previous_multi_key_enabled:
-                if multi_key_enabled:
-                    current_single_key = st.session_state.get(single_key_key)
-                    existing_multi_keys = st.session_state.get(multi_keys_key, [])
-                    if current_single_key in key_options:
-                        st.session_state[multi_keys_key] = [
-                            current_single_key,
-                            *[
-                                key_option
-                                for key_option in existing_multi_keys
-                                if key_option != current_single_key
-                            ],
-                        ]
+            previous_multi_key_enabled = st.session_state.get(
+                multi_key_previous_key,
+                multi_key_enabled,
+            )
+            input_cols = st.columns([3.2, 1.0, 1.45, 0.55, 1.0])
+            with input_cols[0]:
+                st.text_input(
+                    "Title:",
+                    key=f"track_{track_number}_title",
+                    label_visibility="collapsed",
+                )
+            with input_cols[1]:
+                st.number_input(
+                    "BPM:",
+                    min_value=0,
+                    max_value=400,
+                    step=1,
+                    format="%d",
+                    key=f"track_{track_number}_bpm",
+                    label_visibility="collapsed",
+                )
+            with input_cols[2]:
+                multi_key_enabled = st.session_state.get(multi_key_toggle_key, False)
+                if multi_key_enabled != previous_multi_key_enabled:
+                    if multi_key_enabled:
+                        current_single_key = st.session_state.get(single_key_key)
+                        existing_multi_keys = st.session_state.get(multi_keys_key, [])
+                        if current_single_key in key_options:
+                            st.session_state[multi_keys_key] = [
+                                current_single_key,
+                                *[
+                                    key_option
+                                    for key_option in existing_multi_keys
+                                    if key_option != current_single_key
+                                ],
+                            ]
+                        else:
+                            st.session_state[multi_keys_key] = existing_multi_keys
                     else:
-                        st.session_state[multi_keys_key] = existing_multi_keys
-                else:
-                    current_multi_keys = st.session_state.get(multi_keys_key, [])
-                    st.session_state[single_key_key] = (
-                        current_multi_keys[0] if current_multi_keys else None
+                        current_multi_keys = st.session_state.get(multi_keys_key, [])
+                        st.session_state[single_key_key] = (
+                            current_multi_keys[0] if current_multi_keys else None
+                        )
+                    st.session_state[multi_key_previous_key] = multi_key_enabled
+
+                if multi_key_enabled:
+                    selected_keys = st.multiselect(
+                        "Key:",
+                        options=key_options,
+                        key=multi_keys_key,
+                        label_visibility="collapsed",
+                        placeholder="Select key",
                     )
-                st.session_state[multi_key_previous_key] = multi_key_enabled
-
-            if multi_key_enabled:
-                selected_keys = st.multiselect(
-                    "Key:",
-                    options=key_options,
-                    key=multi_keys_key,
+                    st.session_state[key_value_key] = ", ".join(selected_keys)
+                else:
+                    st.selectbox(
+                        "Key:",
+                        options=key_options,
+                        index=None,
+                        placeholder="Select key",
+                        key=single_key_key,
+                        label_visibility="collapsed",
+                    )
+                    st.session_state[key_value_key] = (
+                        st.session_state.get(single_key_key) or ""
+                    )
+            with input_cols[3]:
+                st.checkbox(
+                    "Multi-Key?",
+                    key=multi_key_toggle_key,
                     label_visibility="collapsed",
-                    placeholder="Select key",
                 )
-                st.session_state[key_value_key] = ", ".join(selected_keys)
-            else:
-                st.selectbox(
-                    "Key:",
-                    options=key_options,
-                    index=None,
-                    placeholder="Select key",
-                    key=single_key_key,
-                    label_visibility="collapsed",
+            with input_cols[4]:
+                meter_cols = st.columns([1, 0.18, 1])
+                with meter_cols[0]:
+                    st.text_input(
+                        "Meter numerator:",
+                        key=meter_numerator_key,
+                        label_visibility="collapsed",
+                        placeholder="4",
+                        max_chars=3,
+                    )
+                with meter_cols[1]:
+                    st.markdown('<div class="meter-slash">/</div>', unsafe_allow_html=True)
+                with meter_cols[2]:
+                    st.text_input(
+                        "Meter denominator:",
+                        key=meter_denominator_key,
+                        label_visibility="collapsed",
+                        placeholder="4",
+                        max_chars=3,
+                    )
+
+                st.session_state[meter_value_key] = format_meter_value(
+                    st.session_state.get(meter_numerator_key, ""),
+                    st.session_state.get(meter_denominator_key, ""),
                 )
-                st.session_state[key_value_key] = (
-                    st.session_state.get(single_key_key) or ""
-                )
-        with input_cols[3]:
-            st.checkbox(
-                "Multi-Key?",
-                key=multi_key_toggle_key,
-                label_visibility="collapsed",
-            )
-        with input_cols[4]:
-            st.text_input(
-                "Meter:",
-                key=f"track_{track_number}_meter",
-                label_visibility="collapsed",
-            )
 
-        st.session_state[multi_key_previous_key] = st.session_state.get(
-            multi_key_toggle_key,
-            False,
-        )
-
-        instrument_col, featured_col = st.columns([4.0, 0.9])
-        instrumentation_key = f"track_{track_number}_instrumentation"
-        featured_key = f"track_{track_number}_featured_instrument"
-
-        with instrument_col:
-            selected_instruments = st.multiselect(
-                "Instrumentation:",
-                options=instrument_options,
-                key=instrumentation_key,
+            st.session_state[multi_key_previous_key] = st.session_state.get(
+                multi_key_toggle_key,
+                False,
             )
 
-        with featured_col:
-            if selected_instruments:
-                if st.session_state.get(featured_key) not in selected_instruments:
+            instrument_col, featured_col = st.columns([4.0, 0.9])
+            instrumentation_key = f"track_{track_number}_instrumentation"
+            featured_key = f"track_{track_number}_featured_instrument"
+
+            with instrument_col:
+                selected_instruments = st.multiselect(
+                    "Instrumentation:",
+                    options=instrument_options,
+                    key=instrumentation_key,
+                )
+
+            with featured_col:
+                if selected_instruments:
+                    if st.session_state.get(featured_key) not in selected_instruments:
+                        st.session_state[featured_key] = None
+
+                    st.selectbox(
+                        "Featured Instrument:",
+                        options=selected_instruments,
+                        index=None,
+                        placeholder="Select featured instrument",
+                        key=featured_key,
+                    )
+                else:
                     st.session_state[featured_key] = None
+                    st.selectbox(
+                        "Featured Instrument:",
+                        options=[],
+                        placeholder="Select instrumentation first",
+                        disabled=True,
+                        key=featured_key,
+                    )
+
+            render_instrument_autofill(
+                track_number,
+                used_instrument_suggestions(
+                    int(st.session_state.get("track_count", 1)),
+                    live_track_number=track_number,
+                    live_selected_instruments=selected_instruments,
+                ),
+            )
+
+            if includes_vocals(selected_instruments):
+                st.multiselect(
+                    "Vocal Sub-list:",
+                    options=vocal_options,
+                    key=f"track_{track_number}_vocal_sublist",
+                )
+
+            st.divider()
+            composer_count = int(st.session_state.get(f"track_{track_number}_composer_count", 1))
+            composer_lookup = st.session_state.get("_composer_lookup", {})
+            saved_options = [""] + list(composer_lookup.keys())
+
+            for composer_number in range(1, composer_count + 1):
+                prefix = composer_prefix(track_number, composer_number)
+                saved_key = f"{prefix}_saved"
+                if st.session_state.get(saved_key, "") not in saved_options:
+                    st.session_state[saved_key] = ""
 
                 st.selectbox(
-                    "Featured Instrument:",
-                    options=selected_instruments,
-                    index=None,
-                    placeholder="Select featured instrument",
-                    key=featured_key,
-                )
-            else:
-                st.session_state[featured_key] = None
-                st.selectbox(
-                    "Featured Instrument:",
-                    options=[],
-                    placeholder="Select instrumentation first",
-                    disabled=True,
-                    key=featured_key,
+                    f"Autofill Composer Info {composer_number}:",
+                    options=saved_options,
+                    format_func=format_saved_composer_option,
+                    key=saved_key,
+                    on_change=apply_saved_composer,
+                    args=(prefix, saved_key),
+                    disabled=not composer_lookup,
                 )
 
-        render_instrument_autofill(
-            track_number,
-            used_instrument_suggestions(
-                int(st.session_state.get("track_count", 1)),
-                live_track_number=track_number,
-                live_selected_instruments=selected_instruments,
-            ),
-        )
-
-        if includes_vocals(selected_instruments):
-            st.multiselect(
-                "Vocal Sub-list:",
-                options=vocal_options,
-                key=f"track_{track_number}_vocal_sublist",
-            )
-
-        st.divider()
-        composer_count = int(st.session_state.get(f"track_{track_number}_composer_count", 1))
-        composer_lookup = st.session_state.get("_composer_lookup", {})
-        saved_options = [""] + list(composer_lookup.keys())
-
-        for composer_number in range(1, composer_count + 1):
-            prefix = composer_prefix(track_number, composer_number)
-            saved_key = f"{prefix}_saved"
-            if st.session_state.get(saved_key, "") not in saved_options:
-                st.session_state[saved_key] = ""
-
-            st.selectbox(
-                f"Autofill Composer Info {composer_number}:",
-                options=saved_options,
-                format_func=format_saved_composer_option,
-                key=saved_key,
-                on_change=apply_saved_composer,
-                args=(prefix, saved_key),
-                disabled=not composer_lookup,
-            )
-
-            split_key = f"{prefix}_split"
-            st.session_state.setdefault(
-                split_key,
-                f"{100.0 if composer_number == 1 else 0.0:.2f}",
-            )
-            ensure_text_value(f"{prefix}_cae_ipi")
-            ensure_text_value(split_key, decimal_places=2)
-
-            composer_col, pro_col, cae_col, split_col, dsp_col, artist_col = st.columns(
-                [2, 1.2, 1.1, 0.9, 2, 1.8]
-            )
-            with composer_col:
-                st.text_input("Composer:", key=f"{prefix}_composer")
-            with pro_col:
-                st.text_input("PRO Affiliation:", key=f"{prefix}_pro_affiliation")
-            with cae_col:
-                st.text_input(
-                    "CAE/IPI",
-                    key=f"{prefix}_cae_ipi",
+                split_key = f"{prefix}_split"
+                st.session_state.setdefault(
+                    split_key,
+                    f"{100.0 if composer_number == 1 else 0.0:.2f}",
                 )
-            with split_col:
-                st.text_input(
-                    "Splits:",
-                    key=split_key,
-                )
-            with dsp_col:
-                st.text_input(
-                    "DSP Links (Spotify, Apple Music):",
-                    key=f"{prefix}_dsp_link",
-                )
-            with artist_col:
-                st.text_input(
-                    "Artist Name (Optional):",
-                    key=f"{prefix}_artist_name",
-                )
+                ensure_text_value(f"{prefix}_cae_ipi")
+                ensure_text_value(split_key, decimal_places=2)
 
-        add_col, remove_col, _ = st.columns([1, 1, 4])
-        with add_col:
-            st.button(
-                "Add Composer",
-                key=f"track_{track_number}_add_composer",
-                on_click=increment_composer_count,
-                args=(track_number,),
-                use_container_width=True,
-            )
-        with remove_col:
-            st.button(
-                "Remove Composer",
-                key=f"track_{track_number}_remove_composer",
-                on_click=decrement_composer_count,
-                args=(track_number,),
-                disabled=composer_count <= 1,
-                use_container_width=True,
-            )
+                composer_col, pro_col, cae_col, split_col, dsp_col, artist_col = st.columns(
+                    [2, 1.2, 1.1, 0.9, 2, 1.8]
+                )
+                with composer_col:
+                    st.text_input("Composer:", key=f"{prefix}_composer")
+                with pro_col:
+                    st.text_input("PRO Affiliation:", key=f"{prefix}_pro_affiliation")
+                with cae_col:
+                    st.text_input(
+                        "CAE/IPI",
+                        key=f"{prefix}_cae_ipi",
+                    )
+                with split_col:
+                    st.text_input(
+                        "Splits:",
+                        key=split_key,
+                    )
+                with dsp_col:
+                    st.text_input(
+                        "DSP Links (Spotify, Apple Music):",
+                        key=f"{prefix}_dsp_link",
+                    )
+                with artist_col:
+                    st.text_input(
+                        "Artist Name (Optional):",
+                        key=f"{prefix}_artist_name",
+                    )
+
+            add_col, remove_col, _ = st.columns([1, 1, 4])
+            with add_col:
+                st.button(
+                    "Add Composer",
+                    key=f"track_{track_number}_add_composer",
+                    on_click=increment_composer_count,
+                    args=(track_number,),
+                    use_container_width=True,
+                )
+            with remove_col:
+                st.button(
+                    "Remove Composer",
+                    key=f"track_{track_number}_remove_composer",
+                    on_click=decrement_composer_count,
+                    args=(track_number,),
+                    disabled=composer_count <= 1,
+                    use_container_width=True,
+                )
 
 
 def collect_tracks(track_count: int) -> list[dict[str, object]]:
@@ -874,6 +982,12 @@ def collect_tracks(track_count: int) -> list[dict[str, object]]:
             read_composer_record(track_number, composer_number)
             for composer_number in range(1, composer_count + 1)
         ]
+        meter_numerator = compact_text(
+            st.session_state.get(f"track_{track_number}_meter_numerator", "")
+        )
+        meter_denominator = compact_text(
+            st.session_state.get(f"track_{track_number}_meter_denominator", "")
+        )
 
         bpm_value = st.session_state.get(f"track_{track_number}_bpm", 0)
         tracks.append(
@@ -886,9 +1000,9 @@ def collect_tracks(track_count: int) -> list[dict[str, object]]:
                 ),
                 "bpm": int(bpm_value) if bpm_value else "",
                 "key": compact_text(st.session_state.get(f"track_{track_number}_key", "")),
-                "meter": compact_text(
-                    st.session_state.get(f"track_{track_number}_meter", "")
-                ),
+                "meter": format_meter_value(meter_numerator, meter_denominator),
+                "meter_numerator": meter_numerator,
+                "meter_denominator": meter_denominator,
                 "instrumentation": ", ".join(
                     selected_instruments
                 ),
@@ -1275,12 +1389,15 @@ def build_import_state(imported_workbook: dict[str, object]) -> dict[str, object
         key_text = compact_text(track["key"])
         key_values = [key for key in key_text.split(", ") if key]
         multi_key_enabled = len(key_values) > 1
+        meter_numerator, meter_denominator = parse_meter_components(track["meter"])
         state_updates.update(
             {
                 f"track_{track_number}_title": track["track_title"],
                 f"track_{track_number}_bpm": track["bpm"] or 0,
                 f"track_{track_number}_key": key_text,
                 f"track_{track_number}_meter": track["meter"],
+                f"track_{track_number}_meter_numerator": meter_numerator,
+                f"track_{track_number}_meter_denominator": meter_denominator,
                 f"track_{track_number}_instrumentation": list(track["instrumentation"]),
                 f"track_{track_number}_vocal_sublist": list(track["vocal_sublist"]),
                 f"track_{track_number}_featured_instrument": (
@@ -1419,8 +1536,12 @@ def validation_messages(tracks: list[dict[str, object]]) -> list[str]:
             messages.append(f"Track {track_number}: BPM is required.")
         if not track["key"]:
             messages.append(f"Track {track_number}: Key is required.")
-        if not track["meter"]:
+        if not track["meter_numerator"] or not track["meter_denominator"]:
             messages.append(f"Track {track_number}: Meter is required.")
+        elif not track["meter"]:
+            messages.append(
+                f"Track {track_number}: Meter must use numbers in a format like 4/4."
+            )
         if not track["instrumentation"]:
             messages.append(f"Track {track_number}: Instrumentation is required.")
         if (
