@@ -18,6 +18,7 @@ VOCAL_SUBLIST_PATH = Path(__file__).with_name("vocal_sublist.xlsx")
 KEY_SELECTION_PATH = Path(__file__).with_name("key_selection.xlsx")
 LOGO_PATH = Path(__file__).with_name("wcpm_logo.png")
 TITLE_FONT_PATH = Path(__file__).with_name("plaak_title.ttf")
+BODY_FONT_PATH = Path(__file__).with_name("bw_gradual_light.otf")
 
 INTRO_TEXT = (
     "Please, ensure that the provided information is meticulously verified. "
@@ -100,6 +101,7 @@ def build_track_header_css(max_track_count: int = 200) -> str:
 def configure_page() -> None:
     track_header_css = build_track_header_css()
     title_font_css = ""
+    body_font_css = ""
     if TITLE_FONT_PATH.exists():
         title_font_data_uri = load_binary_asset_data_uri(
             str(TITLE_FONT_PATH),
@@ -116,6 +118,37 @@ def configure_page() -> None:
             div[data-testid="stHeadingWithActionElements"] h1 {{
                 font-family: "Plaak Title", var(--font, sans-serif);
                 letter-spacing: 0;
+            }}
+        """
+    if BODY_FONT_PATH.exists():
+        body_font_data_uri = load_binary_asset_data_uri(
+            str(BODY_FONT_PATH),
+            BODY_FONT_PATH.stat().st_mtime_ns,
+        )
+        body_font_css = f"""
+            @font-face {{
+                font-family: "Bw Gradual";
+                src: url("{body_font_data_uri}") format("opentype");
+                font-style: normal;
+                font-weight: 300;
+                font-display: swap;
+            }}
+            .stApp {{
+                font-family: "Bw Gradual", var(--font, sans-serif);
+            }}
+            .stApp button,
+            .stApp input,
+            .stApp textarea,
+            .stApp select,
+            .stApp label,
+            .stApp [data-baseweb="select"],
+            .stApp [data-baseweb="input"],
+            .stApp [data-baseweb="textarea"],
+            .stApp [data-testid="stMarkdownContainer"],
+            .stApp [data-testid="stText"],
+            .stApp [data-testid="stWidgetLabel"],
+            .stApp [data-testid="stExpander"] summary {{
+                font-family: inherit;
             }}
         """
     base_css = """
@@ -204,7 +237,7 @@ def configure_page() -> None:
         """
     st.set_page_config(page_title=APP_TITLE, layout="wide")
     st.markdown(
-        base_css + title_font_css + track_header_css + "\n</style>",
+        base_css + body_font_css + title_font_css + track_header_css + "\n</style>",
         unsafe_allow_html=True,
     )
 
