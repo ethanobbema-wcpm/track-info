@@ -158,7 +158,7 @@ def configure_page() -> None:
                 font-size: 0.95rem;
                 line-height: 1.55;
                 margin-top: -0.35rem;
-                max-width: 980px;
+                max-width: 100%;
                 opacity: 0.92;
             }
             .app-logo-wrap {
