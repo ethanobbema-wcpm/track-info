@@ -19,6 +19,7 @@ KEY_SELECTION_PATH = Path(__file__).with_name("key_selection.xlsx")
 LOGO_PATH = Path(__file__).with_name("wcpm_logo.png")
 TITLE_FONT_PATH = Path(__file__).with_name("plaak_title.ttf")
 BODY_FONT_PATH = Path(__file__).with_name("bw_gradual_light.otf")
+BODY_FONT_MEDIUM_PATH = Path(__file__).with_name("bw_gradual_medium.otf")
 
 INTRO_TEXT = (
     "Please, ensure that the provided information is meticulously verified. "
@@ -28,8 +29,18 @@ INTRO_TEXT = (
     "There might be a few occasions where the half note value would make more "
     "sense. If you are arranging a Public Domain work, please, indicate the "
     "EXACT original title between parentheses. Please, be precise when listing "
-    "instruments."
+    "instruments. "
 )
+INTRO_TEXT_EMPHASIS = (
+    "Export the excel at the bottom of the page. Please do not edit the excel "
+    "and instead use the FIX button to make any changes before exporting again."
+)
+HELP_TOOLTIP_ITEMS = [
+    "Exporting is only available after all required fields are completed.",
+    "Expand the Required Fields dropdown at the bottom of the page to see what remaining fields must be completed.",
+    'The "Reset" button clears the page.',
+    'Use the "Need to fix Track Info?" button to upload and reload the page for editing.',
+]
 
 COMPOSER_FIELDS = {
     "composer": "Composer:",
@@ -125,6 +136,26 @@ def configure_page() -> None:
             str(BODY_FONT_PATH),
             BODY_FONT_PATH.stat().st_mtime_ns,
         )
+        body_font_medium_css = ""
+        if BODY_FONT_MEDIUM_PATH.exists():
+            body_font_medium_data_uri = load_binary_asset_data_uri(
+                str(BODY_FONT_MEDIUM_PATH),
+                BODY_FONT_MEDIUM_PATH.stat().st_mtime_ns,
+            )
+            body_font_medium_css = f"""
+                @font-face {{
+                    font-family: "Bw Gradual Medium";
+                    src: url("{body_font_medium_data_uri}") format("opentype");
+                    font-style: normal;
+                    font-weight: 500;
+                    font-display: swap;
+                }}
+                .intro-copy strong,
+                .intro-copy .intro-emphasis {{
+                    font-family: "Bw Gradual Medium", "Bw Gradual", var(--font, sans-serif);
+                    font-weight: 500;
+                }}
+            """
         body_font_css = f"""
             @font-face {{
                 font-family: "Bw Gradual";
@@ -150,6 +181,7 @@ def configure_page() -> None:
             .stApp [data-testid="stExpander"] summary {{
                 font-family: inherit;
             }}
+            {body_font_medium_css}
         """
     base_css = """
         <style>
@@ -171,6 +203,68 @@ def configure_page() -> None:
                 height: auto;
                 max-width: 100%;
                 width: 336px;
+            }
+            .page-help-row {
+                display: flex;
+                justify-content: flex-end;
+                margin: 0 0 0.35rem;
+            }
+            .page-help {
+                position: relative;
+                display: inline-flex;
+                justify-content: center;
+                align-items: center;
+            }
+            .page-help-icon {
+                align-items: center;
+                background: var(--secondary-background-color, rgba(255, 255, 255, 0.06));
+                border: 1px solid rgba(148, 163, 184, 0.45);
+                border-radius: 999px;
+                color: var(--text-color, inherit);
+                cursor: default;
+                display: inline-flex;
+                font-family: "Bw Gradual Medium", "Bw Gradual", var(--font, sans-serif);
+                font-size: 0.95rem;
+                height: 1.9rem;
+                justify-content: center;
+                line-height: 1;
+                width: 1.9rem;
+            }
+            .page-help-tooltip {
+                background: #ffffff;
+                border: 1px solid rgba(15, 23, 42, 0.12);
+                border-radius: 8px;
+                box-shadow: 0 12px 30px rgba(15, 23, 42, 0.28);
+                color: #111827;
+                opacity: 0;
+                padding: 0.8rem 1rem;
+                pointer-events: none;
+                position: absolute;
+                right: 0;
+                top: calc(100% + 0.45rem);
+                transform: translateY(-0.2rem);
+                transition: opacity 140ms ease, transform 140ms ease;
+                visibility: hidden;
+                width: min(420px, 72vw);
+                z-index: 50;
+            }
+            .page-help:hover .page-help-tooltip,
+            .page-help:focus-within .page-help-tooltip {
+                opacity: 1;
+                transform: translateY(0);
+                visibility: visible;
+            }
+            .page-help-tooltip ul {
+                margin: 0;
+                padding-left: 1.1rem;
+            }
+            .page-help-tooltip li {
+                color: #111827;
+                line-height: 1.45;
+                margin: 0 0 0.45rem;
+            }
+            .page-help-tooltip li:last-child {
+                margin-bottom: 0;
             }
             div[data-testid="stExpander"] {
                 border-radius: 8px;
@@ -359,6 +453,21 @@ def render_logo_header() -> None:
             '<div class="app-logo-wrap">'
             f'<img src="{logo_data_uri}" alt="Warner Chappell Production Music" '
             'class="app-logo">'
+            "</div>"
+        ),
+        unsafe_allow_html=True,
+    )
+
+
+def render_page_help() -> None:
+    tooltip_items = "".join(f"<li>{item}</li>" for item in HELP_TOOLTIP_ITEMS)
+    st.markdown(
+        (
+            '<div class="page-help-row">'
+            '<div class="page-help">'
+            '<div class="page-help-icon" aria-label="Track Info help">?</div>'
+            f'<div class="page-help-tooltip"><ul>{tooltip_items}</ul></div>'
+            "</div>"
             "</div>"
         ),
         unsafe_allow_html=True,
@@ -1548,6 +1657,38 @@ def build_import_state(imported_workbook: dict[str, object]) -> dict[str, object
     return state_updates
 
 
+def build_default_form_state() -> dict[str, object]:
+    return {
+        "album_name": "",
+        "producer": "",
+        "track_count": 1,
+        "show_track_info_import": False,
+        "_composer_lookup": {},
+        "_show_export_success_dialog": False,
+        "track_1_title": "",
+        "track_1_bpm": 0,
+        "track_1_key": "",
+        "track_1_meter": "",
+        "track_1_meter_numerator": "",
+        "track_1_meter_denominator": "",
+        "track_1_instrumentation": [],
+        "track_1_vocal_sublist": [],
+        "track_1_featured_instrument": None,
+        "track_1_multi_key_enabled": False,
+        "track_1_multi_key_previous": False,
+        "track_1_single_key": None,
+        "track_1_multi_keys": [],
+        "track_1_composer_count": 1,
+        f"{composer_prefix(1, 1)}_saved": "",
+        f"{composer_prefix(1, 1)}_composer": "",
+        f"{composer_prefix(1, 1)}_pro_affiliation": "",
+        f"{composer_prefix(1, 1)}_cae_ipi": "",
+        f"{composer_prefix(1, 1)}_split": "100.00",
+        f"{composer_prefix(1, 1)}_dsp_link": "",
+        f"{composer_prefix(1, 1)}_artist_name": "",
+    }
+
+
 def apply_pending_import() -> None:
     imported_workbook = st.session_state.pop("_pending_track_info_import", None)
     if not imported_workbook:
@@ -1564,6 +1705,22 @@ def apply_pending_import() -> None:
         del st.session_state[key]
 
     for key, value in build_import_state(imported_workbook).items():
+        st.session_state[key] = value
+
+
+def apply_pending_reset() -> None:
+    if not st.session_state.pop("_pending_track_info_reset", False):
+        return
+
+    keys_to_clear = [
+        key
+        for key in list(st.session_state.keys())
+        if not str(key).startswith("$$STREAMLIT_INTERNAL_KEY")
+    ]
+    for key in keys_to_clear:
+        del st.session_state[key]
+
+    for key, value in build_default_form_state().items():
         st.session_state[key] = value
 
 
@@ -1713,29 +1870,7 @@ def clear_export_success_dialog() -> None:
 
 
 def reset_form_state() -> None:
-    keys_to_clear = [
-        key
-        for key in list(st.session_state.keys())
-        if key in {
-            "album_name",
-            "producer",
-            "track_count",
-            "_composer_lookup",
-            "show_track_info_import",
-            "_pending_track_info_import",
-            "_track_info_import_message",
-            "_track_info_import_error",
-            "track_info_import_file",
-            "_show_export_success_dialog",
-            "_export_success_file_name",
-        }
-        or re.match(r"track_\d+_", key)
-    ]
-
-    for key in keys_to_clear:
-        del st.session_state[key]
-
-    st.session_state["track_count"] = 1
+    st.session_state["_pending_track_info_reset"] = True
 
 
 @st.dialog(
@@ -1786,12 +1921,13 @@ def render_export(track_count: int) -> None:
         )
     with action_cols[1]:
         with st.container(key="track-info-reset"):
-            st.button(
+            if st.button(
                 "Reset",
                 key="reset_track_info",
-                on_click=reset_form_state,
                 use_container_width=True,
-            )
+            ):
+                reset_form_state()
+                st.rerun()
 
     if st.session_state.get("_show_export_success_dialog", False):
         render_export_success_dialog()
@@ -1799,11 +1935,20 @@ def render_export(track_count: int) -> None:
 
 def main() -> None:
     configure_page()
+    apply_pending_reset()
     apply_pending_import()
 
+    render_page_help()
     render_logo_header()
     st.title(APP_TITLE)
-    st.markdown(f'<p class="intro-copy">{INTRO_TEXT}</p>', unsafe_allow_html=True)
+    st.markdown(
+        (
+            f'<p class="intro-copy">{INTRO_TEXT}'
+            f'<strong class="intro-emphasis">{INTRO_TEXT_EMPHASIS}</strong>'
+            "</p>"
+        ),
+        unsafe_allow_html=True,
+    )
 
     track_count = render_header_fields()
     instrument_options = get_instrument_options()
