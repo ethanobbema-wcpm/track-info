@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import re
 from datetime import datetime
 from io import BytesIO
@@ -15,6 +16,8 @@ APP_TITLE = "Track Info"
 INSTRUMENT_TAXONOMY_PATH = Path(__file__).with_name("taxonomy_instruments.xlsx")
 VOCAL_SUBLIST_PATH = Path(__file__).with_name("vocal_sublist.xlsx")
 KEY_SELECTION_PATH = Path(__file__).with_name("key_selection.xlsx")
+LOGO_PATH = Path(__file__).with_name("wcpm_logo.png")
+TITLE_FONT_PATH = Path(__file__).with_name("plaak_title.ttf")
 
 INTRO_TEXT = (
     "Please, ensure that the provided information is meticulously verified. "
@@ -96,6 +99,25 @@ def build_track_header_css(max_track_count: int = 200) -> str:
 
 def configure_page() -> None:
     track_header_css = build_track_header_css()
+    title_font_css = ""
+    if TITLE_FONT_PATH.exists():
+        title_font_data_uri = load_binary_asset_data_uri(
+            str(TITLE_FONT_PATH),
+            TITLE_FONT_PATH.stat().st_mtime_ns,
+        )
+        title_font_css = f"""
+            @font-face {{
+                font-family: "Plaak Title";
+                src: url("{title_font_data_uri}") format("truetype");
+                font-style: normal;
+                font-weight: 800;
+                font-display: swap;
+            }}
+            div[data-testid="stHeadingWithActionElements"] h1 {{
+                font-family: "Plaak Title", var(--font, sans-serif);
+                letter-spacing: 0;
+            }}
+        """
     base_css = """
         <style>
             .intro-copy {
@@ -105,6 +127,17 @@ def configure_page() -> None:
                 margin-top: -0.35rem;
                 max-width: 980px;
                 opacity: 0.92;
+            }
+            .app-logo-wrap {
+                display: flex;
+                justify-content: center;
+                margin: 0.15rem 0 0.85rem;
+            }
+            .app-logo {
+                display: block;
+                height: auto;
+                max-width: 100%;
+                width: 336px;
             }
             div[data-testid="stExpander"] {
                 border-radius: 8px;
@@ -171,7 +204,7 @@ def configure_page() -> None:
         """
     st.set_page_config(page_title=APP_TITLE, layout="wide")
     st.markdown(
-        base_css + track_header_css + "\n</style>",
+        base_css + title_font_css + track_header_css + "\n</style>",
         unsafe_allow_html=True,
     )
 
@@ -260,6 +293,43 @@ def load_key_options(key_selection_modified_at: int) -> list[str]:
     key_options = read_single_column_workbook_in_source_order(KEY_SELECTION_PATH)
     key_options = [option for option in key_options if option != "No Key"]
     return ["No Key", *key_options]
+
+
+@st.cache_data
+def load_binary_asset_data_uri(asset_path: str, asset_modified_at: int) -> str:
+    _ = asset_modified_at
+    path = Path(asset_path)
+    mime_type = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+        ".ttf": "font/ttf",
+        ".otf": "font/otf",
+        ".woff": "font/woff",
+        ".woff2": "font/woff2",
+    }.get(path.suffix.lower(), "application/octet-stream")
+    encoded_asset = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{mime_type};base64,{encoded_asset}"
+
+
+def render_logo_header() -> None:
+    if not LOGO_PATH.exists():
+        return
+
+    logo_data_uri = load_binary_asset_data_uri(
+        str(LOGO_PATH),
+        LOGO_PATH.stat().st_mtime_ns,
+    )
+    st.markdown(
+        (
+            '<div class="app-logo-wrap">'
+            f'<img src="{logo_data_uri}" alt="Warner Chappell Production Music" '
+            'class="app-logo">'
+            "</div>"
+        ),
+        unsafe_allow_html=True,
+    )
 
 
 def includes_vocals(selected_instruments: list[str]) -> bool:
@@ -1698,6 +1768,7 @@ def main() -> None:
     configure_page()
     apply_pending_import()
 
+    render_logo_header()
     st.title(APP_TITLE)
     st.markdown(f'<p class="intro-copy">{INTRO_TEXT}</p>', unsafe_allow_html=True)
 
