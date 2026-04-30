@@ -317,6 +317,21 @@ def configure_page() -> None:
                 border-color: #991b1b;
                 color: #ffffff;
             }
+            .st-key-track-info-export-excel div[data-testid="stDownloadButton"] > button:not(:disabled),
+            .st-key-track-info-export-lyrics div[data-testid="stDownloadButton"] > button:not(:disabled),
+            .st-key-track-info-export-lyrics-dialog div[data-testid="stDownloadButton"] > button:not(:disabled) {
+                background: #16a34a;
+                border: 1px solid #15803d;
+                color: #ffffff;
+                font-weight: 600;
+            }
+            .st-key-track-info-export-excel div[data-testid="stDownloadButton"] > button:not(:disabled):hover,
+            .st-key-track-info-export-lyrics div[data-testid="stDownloadButton"] > button:not(:disabled):hover,
+            .st-key-track-info-export-lyrics-dialog div[data-testid="stDownloadButton"] > button:not(:disabled):hover {
+                background: #15803d;
+                border-color: #166534;
+                color: #ffffff;
+            }
             .instrument-autofill-label {
                 color: var(--text-color, inherit);
                 font-size: 0.92rem;
@@ -2163,6 +2178,24 @@ def render_export_success_dialog() -> None:
     if export_file_name:
         st.caption(export_file_name)
 
+    track_count = int(st.session_state.get("track_count", 1))
+    tracks = collect_tracks(track_count)
+    lyric_tracks = tracks_with_lyrics(tracks)
+    if lyric_tracks:
+        lyrics_docx_bytes = build_lyrics_docx(tracks)
+        lyrics_file_name = safe_lyrics_filename(
+            compact_text(st.session_state.get("album_name", ""))
+        )
+        with st.container(key="track-info-export-lyrics-dialog"):
+            st.download_button(
+                "Export Lyrics",
+                data=lyrics_docx_bytes,
+                file_name=lyrics_file_name,
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                key="export_lyrics_dialog",
+                use_container_width=True,
+            )
+
     if st.button(
         "Close",
         key="close_export_success_dialog",
@@ -2190,27 +2223,29 @@ def render_export(track_count: int) -> None:
     )
     action_cols = st.columns([4, 1])
     with action_cols[0]:
-        st.download_button(
-            "Export Excel",
-            data=workbook_bytes,
-            file_name=workbook_file_name,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="export_excel",
-            on_click=mark_export_success,
-            args=(workbook_file_name,),
-            disabled=bool(messages),
-            type="primary",
-            use_container_width=True,
-        )
-        st.download_button(
-            "Export Lyrics",
-            data=lyrics_docx_bytes,
-            file_name=lyrics_file_name,
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            key="export_lyrics",
-            disabled=bool(messages) or not lyric_tracks,
-            use_container_width=True,
-        )
+        with st.container(key="track-info-export-excel"):
+            st.download_button(
+                "Export Excel",
+                data=workbook_bytes,
+                file_name=workbook_file_name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="export_excel",
+                on_click=mark_export_success,
+                args=(workbook_file_name,),
+                disabled=bool(messages),
+                type="primary",
+                use_container_width=True,
+            )
+        with st.container(key="track-info-export-lyrics"):
+            st.download_button(
+                "Export Lyrics",
+                data=lyrics_docx_bytes,
+                file_name=lyrics_file_name,
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                key="export_lyrics",
+                disabled=bool(messages) or not lyric_tracks,
+                use_container_width=True,
+            )
     with action_cols[1]:
         with st.container(key="track-info-reset"):
             if st.button(
