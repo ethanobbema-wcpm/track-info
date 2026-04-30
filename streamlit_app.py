@@ -1926,6 +1926,7 @@ def build_default_form_state() -> dict[str, object]:
         "show_track_info_import": False,
         "_composer_lookup": {},
         "_show_export_success_dialog": False,
+        "_export_success_nonce": 0,
         "track_1_title": "",
         "track_1_bpm": 0,
         "track_1_key": "",
@@ -2155,6 +2156,9 @@ def safe_lyrics_filename(album_name: str) -> str:
 def mark_export_success(file_name: str) -> None:
     st.session_state["_show_export_success_dialog"] = True
     st.session_state["_export_success_file_name"] = file_name
+    st.session_state["_export_success_nonce"] = (
+        int(st.session_state.get("_export_success_nonce", 0)) + 1
+    )
 
 
 def clear_export_success_dialog() -> None:
@@ -2172,7 +2176,8 @@ def reset_form_state() -> None:
     icon=":material/check_circle:",
     on_dismiss=clear_export_success_dialog,
 )
-def render_export_success_dialog() -> None:
+def render_export_success_dialog(export_success_nonce: int) -> None:
+    _ = export_success_nonce
     st.success("Your Track Info file was successfully exported.")
     export_file_name = compact_text(st.session_state.get("_export_success_file_name", ""))
     if export_file_name:
@@ -2257,7 +2262,7 @@ def render_export(track_count: int) -> None:
                 st.rerun()
 
     if st.session_state.get("_show_export_success_dialog", False):
-        render_export_success_dialog()
+        render_export_success_dialog(int(st.session_state.get("_export_success_nonce", 0)))
 
 
 def main() -> None:
