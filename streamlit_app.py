@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import base64
 import re
+import zipfile
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 import streamlit as st
 from openpyxl import Workbook, load_workbook
@@ -33,7 +35,8 @@ INTRO_TEXT = (
 )
 INTRO_TEXT_EMPHASIS = (
     "Export the excel at the bottom of the page. Please do not edit the excel "
-    "and instead use the FIX button to make any changes before exporting again."
+    "and instead use the FIX button to make any changes before exporting again. "
+    "IF the track has lyrics, please export the lyrics file separately."
 )
 HELP_TOOLTIP_ITEMS = [
     "Exporting is only available after all required fields are completed.",
@@ -277,16 +280,18 @@ def configure_page() -> None:
             div[data-testid="stButton"] > button[kind="tertiary"] {
                 background: transparent;
                 border: none;
-                color: #d1d5db;
+                color: var(--text-color, inherit);
                 justify-content: flex-start;
                 min-height: 1.1rem;
+                opacity: 0.82;
                 padding: 0;
                 text-decoration: underline;
                 white-space: nowrap;
             }
             div[data-testid="stButton"] > button[kind="tertiary"]:hover {
                 background: transparent;
-                color: #ffffff;
+                color: var(--text-color, inherit);
+                opacity: 1;
             }
             .st-key-track-info-import-toggle div[data-testid="stButton"] > button {
                 background: #facc15;
@@ -311,14 +316,16 @@ def configure_page() -> None:
                 color: #ffffff;
             }
             .instrument-autofill-label {
-                color: #d1d5db;
+                color: var(--text-color, inherit);
                 font-size: 0.92rem;
                 line-height: 1.3;
+                opacity: 0.82;
                 padding-top: 0.2rem;
                 white-space: nowrap;
             }
             .instrument-autofill-prefix {
-                color: #d1d5db;
+                color: var(--text-color, inherit);
+                opacity: 0.82;
                 white-space: nowrap;
             }
             .meter-slash {
@@ -703,6 +710,11 @@ def format_meter_value(numerator: object, denominator: object) -> str:
     return f"{int(numerator_text)}/{int(denominator_text)}"
 
 
+def clean_multiline_text(value: object) -> str:
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    return "\n".join(line.rstrip() for line in text.split("\n"))
+
+
 def read_cae_ipi_value(raw_value: object) -> int | None:
     if raw_value in ("", None):
         return None
@@ -910,6 +922,8 @@ def render_track_fields(
             meter_value_key = f"track_{track_number}_meter"
             meter_numerator_key = f"track_{track_number}_meter_numerator"
             meter_denominator_key = f"track_{track_number}_meter_denominator"
+            lyrics_toggle_key = f"track_{track_number}_has_lyrics"
+            lyrics_key = f"track_{track_number}_lyrics"
 
             current_key_text = compact_text(st.session_state.get(key_value_key, ""))
             current_key_values = [
@@ -940,8 +954,10 @@ def render_track_fields(
             )
             st.session_state.setdefault(meter_numerator_key, meter_numerator)
             st.session_state.setdefault(meter_denominator_key, meter_denominator)
+            st.session_state.setdefault(lyrics_toggle_key, False)
+            st.session_state.setdefault(lyrics_key, "")
 
-            label_cols = st.columns([3.2, 1.0, 1.45, 0.55, 1.0])
+            label_cols = st.columns([2.75, 0.55, 1.35, 0.9, 0.85, 1.0])
             with label_cols[0]:
                 st.markdown("Title:")
             with label_cols[1]:
@@ -952,13 +968,15 @@ def render_track_fields(
                 st.markdown("Multi-Key?")
             with label_cols[4]:
                 st.markdown("Meter:")
+            with label_cols[5]:
+                st.markdown("Has Lyrics?")
 
             multi_key_enabled = st.session_state.get(multi_key_toggle_key, False)
             previous_multi_key_enabled = st.session_state.get(
                 multi_key_previous_key,
                 multi_key_enabled,
             )
-            input_cols = st.columns([3.2, 1.0, 1.45, 0.55, 1.0])
+            input_cols = st.columns([2.75, 0.55, 1.35, 0.9, 0.85, 1.0])
             with input_cols[0]:
                 st.text_input(
                     "Title:",
@@ -1027,7 +1045,7 @@ def render_track_fields(
                     label_visibility="collapsed",
                 )
             with input_cols[4]:
-                meter_cols = st.columns([1, 0.18, 1])
+                meter_cols = st.columns([1, 0.12, 1])
                 with meter_cols[0]:
                     st.text_input(
                         "Meter numerator:",
@@ -1050,6 +1068,12 @@ def render_track_fields(
                 st.session_state[meter_value_key] = format_meter_value(
                     st.session_state.get(meter_numerator_key, ""),
                     st.session_state.get(meter_denominator_key, ""),
+                )
+            with input_cols[5]:
+                st.checkbox(
+                    "Has Lyrics?",
+                    key=lyrics_toggle_key,
+                    label_visibility="collapsed",
                 )
 
             st.session_state[multi_key_previous_key] = st.session_state.get(
@@ -1098,6 +1122,14 @@ def render_track_fields(
                     live_selected_instruments=selected_instruments,
                 ),
             )
+
+            if st.session_state.get(lyrics_toggle_key, False):
+                st.text_area(
+                    "Lyrics:",
+                    key=lyrics_key,
+                    height=180,
+                    placeholder="Enter lyrics",
+                )
 
             if includes_vocals(selected_instruments):
                 st.multiselect(
@@ -1218,6 +1250,10 @@ def collect_tracks(track_count: int) -> list[dict[str, object]]:
                 "meter_denominator": meter_denominator,
                 "instrumentation": ", ".join(
                     selected_instruments
+                ),
+                "has_lyrics": bool(st.session_state.get(f"track_{track_number}_has_lyrics", False)),
+                "lyrics": clean_multiline_text(
+                    st.session_state.get(f"track_{track_number}_lyrics", "")
                 ),
                 "vocal_sublist": ", ".join(
                     st.session_state.get(f"track_{track_number}_vocal_sublist", [])
@@ -1351,6 +1387,107 @@ def build_excel_workbook(tracks: list[dict[str, object]]) -> bytes:
 
     output = BytesIO()
     workbook.save(output)
+    output.seek(0)
+    return output.getvalue()
+
+
+def tracks_with_lyrics(tracks: list[dict[str, object]]) -> list[dict[str, object]]:
+    return [
+        track
+        for track in tracks
+        if track.get("has_lyrics") and track.get("lyrics")
+    ]
+
+
+def docx_text_run_xml(text: str, *, bold: bool = False, font_size_half_points: int = 22) -> str:
+    run_properties = [f'<w:sz w:val="{font_size_half_points}"/>']
+    if bold:
+        run_properties.insert(0, "<w:b/>")
+    escaped_text = escape(text)
+    return (
+        "<w:r>"
+        f"<w:rPr>{''.join(run_properties)}</w:rPr>"
+        f'<w:t xml:space="preserve">{escaped_text}</w:t>'
+        "</w:r>"
+    )
+
+
+def lyrics_to_paragraph_xml(lyrics_text: str) -> str:
+    lyric_lines = lyrics_text.split("\n")
+    paragraphs: list[str] = []
+
+    for lyric_line in lyric_lines:
+        if lyric_line:
+            paragraphs.append(
+                f"<w:p>{docx_text_run_xml(lyric_line, font_size_half_points=22)}</w:p>"
+            )
+        else:
+            paragraphs.append("<w:p/>")
+
+    return "".join(paragraphs)
+
+
+def build_lyrics_docx(tracks: list[dict[str, object]]) -> bytes:
+    lyric_tracks = tracks_with_lyrics(tracks)
+    body_parts: list[str] = []
+
+    for index, track in enumerate(lyric_tracks):
+        title_text = f"Title: {track['track_title']}"
+        body_parts.append(
+            "<w:p>"
+            f"{docx_text_run_xml(title_text, bold=True, font_size_half_points=28)}"
+            "</w:p>"
+        )
+        body_parts.append(lyrics_to_paragraph_xml(track["lyrics"]))
+        if index < len(lyric_tracks) - 1:
+            body_parts.append("<w:p/>")
+
+    document_xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas"
+ xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+ xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"
+ xmlns:v="urn:schemas-microsoft-com:vml"
+ xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing"
+ xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+ xmlns:w10="urn:schemas-microsoft-com:office:word"
+ xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+ xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"
+ xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"
+ xmlns:wpi="http://schemas.microsoft.com/office/word/2010/wordprocessingInk"
+ xmlns:wne="http://schemas.microsoft.com/office/word/2006/wordml"
+ xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
+ mc:Ignorable="w14 wp14">
+  <w:body>
+    {''.join(body_parts)}
+    <w:sectPr>
+      <w:pgSz w:w="12240" w:h="15840"/>
+      <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>
+    </w:sectPr>
+  </w:body>
+</w:document>
+"""
+
+    content_types_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>
+"""
+
+    rels_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>
+"""
+
+    output = BytesIO()
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as docx_zip:
+        docx_zip.writestr("[Content_Types].xml", content_types_xml)
+        docx_zip.writestr("_rels/.rels", rels_xml)
+        docx_zip.writestr("word/document.xml", document_xml)
     output.seek(0)
     return output.getvalue()
 
@@ -1551,6 +1688,8 @@ def parse_imported_workbook(file_bytes: bytes) -> dict[str, object]:
                 "featured_instrument": compact_text(
                     imported_row_value(row_values, header_index, "Featured Instrument")
                 ),
+                "has_lyrics": False,
+                "lyrics": "",
                 "composers": [],
             }
 
@@ -1616,6 +1755,8 @@ def build_import_state(imported_workbook: dict[str, object]) -> dict[str, object
                 f"track_{track_number}_featured_instrument": (
                     track["featured_instrument"] or None
                 ),
+                f"track_{track_number}_has_lyrics": bool(track.get("has_lyrics")),
+                f"track_{track_number}_lyrics": track.get("lyrics", ""),
                 f"track_{track_number}_multi_key_enabled": multi_key_enabled,
                 f"track_{track_number}_multi_key_previous": multi_key_enabled,
                 f"track_{track_number}_single_key": (
@@ -1672,6 +1813,8 @@ def build_default_form_state() -> dict[str, object]:
         "track_1_meter_numerator": "",
         "track_1_meter_denominator": "",
         "track_1_instrumentation": [],
+        "track_1_has_lyrics": False,
+        "track_1_lyrics": "",
         "track_1_vocal_sublist": [],
         "track_1_featured_instrument": None,
         "track_1_multi_key_enabled": False,
@@ -1805,6 +1948,8 @@ def validation_messages(tracks: list[dict[str, object]]) -> list[str]:
             )
         if not track["instrumentation"]:
             messages.append(f"Track {track_number}: Instrumentation is required.")
+        if track["has_lyrics"] and not track["lyrics"]:
+            messages.append(f"Track {track_number}: Lyrics are required when Has Lyrics? is checked.")
         if (
             includes_vocals(str(track["instrumentation"]).split(", "))
             and not track["vocal_sublist"]
@@ -1859,6 +2004,14 @@ def safe_filename(album_name: str) -> str:
     return f"{slug}_Track_Info_{timestamp}.xlsx"
 
 
+def safe_lyrics_filename(album_name: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", album_name).strip("_")
+    if not slug:
+        slug = "Track_Info"
+    timestamp = datetime.now().strftime("%Y%m%d")
+    return f"{slug}_Lyrics_{timestamp}.docx"
+
+
 def mark_export_success(file_name: str) -> None:
     st.session_state["_show_export_success_dialog"] = True
     st.session_state["_export_success_file_name"] = file_name
@@ -1904,19 +2057,33 @@ def render_export(track_count: int) -> None:
                 st.warning(message)
 
     workbook_bytes = build_excel_workbook(tracks)
-    file_name = safe_filename(compact_text(st.session_state.get("album_name", "")))
+    workbook_file_name = safe_filename(compact_text(st.session_state.get("album_name", "")))
+    lyric_tracks = tracks_with_lyrics(tracks)
+    lyrics_docx_bytes = build_lyrics_docx(tracks) if lyric_tracks else b""
+    lyrics_file_name = safe_lyrics_filename(
+        compact_text(st.session_state.get("album_name", ""))
+    )
     action_cols = st.columns([4, 1])
     with action_cols[0]:
         st.download_button(
             "Export Excel",
             data=workbook_bytes,
-            file_name=file_name,
+            file_name=workbook_file_name,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="export_excel",
             on_click=mark_export_success,
-            args=(file_name,),
+            args=(workbook_file_name,),
             disabled=bool(messages),
             type="primary",
+            use_container_width=True,
+        )
+        st.download_button(
+            "Export Lyrics",
+            data=lyrics_docx_bytes,
+            file_name=lyrics_file_name,
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            key="export_lyrics",
+            disabled=bool(messages) or not lyric_tracks,
             use_container_width=True,
         )
     with action_cols[1]:
