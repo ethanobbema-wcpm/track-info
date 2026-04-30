@@ -6,6 +6,7 @@ import zipfile
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
+from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape
 
 import streamlit as st
@@ -22,6 +23,7 @@ LOGO_PATH = Path(__file__).with_name("wcpm_logo.png")
 TITLE_FONT_PATH = Path(__file__).with_name("plaak_title.ttf")
 BODY_FONT_PATH = Path(__file__).with_name("bw_gradual_light.otf")
 BODY_FONT_MEDIUM_PATH = Path(__file__).with_name("bw_gradual_medium.otf")
+WORDPROCESSINGML_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
 INTRO_TEXT = (
     "Please, ensure that the provided information is meticulously verified. "
@@ -1123,19 +1125,19 @@ def render_track_fields(
                 ),
             )
 
+            if includes_vocals(selected_instruments):
+                st.multiselect(
+                    "Vocal Sub-list:",
+                    options=vocal_options,
+                    key=f"track_{track_number}_vocal_sublist",
+                )
+
             if st.session_state.get(lyrics_toggle_key, False):
                 st.text_area(
                     "Lyrics:",
                     key=lyrics_key,
                     height=180,
                     placeholder="Enter lyrics",
-                )
-
-            if includes_vocals(selected_instruments):
-                st.multiselect(
-                    "Vocal Sub-list:",
-                    options=vocal_options,
-                    key=f"track_{track_number}_vocal_sublist",
                 )
 
             st.divider()
@@ -1490,6 +1492,109 @@ def build_lyrics_docx(tracks: list[dict[str, object]]) -> bytes:
         docx_zip.writestr("word/document.xml", document_xml)
     output.seek(0)
     return output.getvalue()
+
+
+def paragraph_text_from_docx_xml(paragraph: ET.Element) -> str:
+    parts: list[str] = []
+    for node in paragraph.iter():
+        if node.tag == f"{{{WORDPROCESSINGML_NS}}}t":
+            parts.append(node.text or "")
+        elif node.tag == f"{{{WORDPROCESSINGML_NS}}}br":
+            parts.append("\n")
+        elif node.tag == f"{{{WORDPROCESSINGML_NS}}}tab":
+            parts.append("\t")
+    return "".join(parts)
+
+
+def finalize_lyrics_lines(lines: list[str]) -> str:
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return clean_multiline_text("\n".join(lines))
+
+
+def parse_imported_lyrics_docx(file_bytes: bytes) -> list[dict[str, str]]:
+    try:
+        with zipfile.ZipFile(BytesIO(file_bytes)) as docx_zip:
+            document_xml = docx_zip.read("word/document.xml")
+    except KeyError as exc:
+        raise ValueError("This lyrics file is missing its main document content.") from exc
+    except zipfile.BadZipFile as exc:
+        raise ValueError("This file is not a valid Word document.") from exc
+
+    try:
+        root = ET.fromstring(document_xml)
+    except ET.ParseError as exc:
+        raise ValueError("This lyrics file could not be parsed.") from exc
+
+    body = root.find(f".//{{{WORDPROCESSINGML_NS}}}body")
+    if body is None:
+        raise ValueError("This lyrics file does not contain any body content.")
+
+    lyrics_entries: list[dict[str, str]] = []
+    current_title = ""
+    current_lines: list[str] = []
+
+    for paragraph in body.findall(f"{{{WORDPROCESSINGML_NS}}}p"):
+        paragraph_text = paragraph_text_from_docx_xml(paragraph)
+        compact_paragraph_text = compact_text(paragraph_text)
+
+        if compact_paragraph_text.startswith("Title: "):
+            if current_title:
+                lyrics_entries.append(
+                    {
+                        "track_title": current_title,
+                        "lyrics": finalize_lyrics_lines(current_lines),
+                    }
+                )
+            current_title = compact_text(compact_paragraph_text.removeprefix("Title: "))
+            current_lines = []
+        elif current_title:
+            current_lines.append(paragraph_text.rstrip())
+
+    if current_title:
+        lyrics_entries.append(
+            {
+                "track_title": current_title,
+                "lyrics": finalize_lyrics_lines(current_lines),
+            }
+        )
+
+    if not lyrics_entries:
+        raise ValueError("No lyrics tracks were found in that Word document.")
+
+    return lyrics_entries
+
+
+def merge_imported_lyrics(
+    imported_workbook: dict[str, object],
+    imported_lyrics: list[dict[str, str]],
+) -> tuple[int, list[str]]:
+    lyrics_by_title: dict[str, list[str]] = {}
+    for lyrics_entry in imported_lyrics:
+        title_key = compact_text(lyrics_entry["track_title"]).casefold()
+        if not title_key:
+            continue
+        lyrics_by_title.setdefault(title_key, []).append(lyrics_entry["lyrics"])
+
+    matched_count = 0
+    for track in imported_workbook["tracks"]:
+        title_key = compact_text(track["track_title"]).casefold()
+        lyrics_matches = lyrics_by_title.get(title_key, [])
+        if not lyrics_matches:
+            continue
+
+        track["lyrics"] = lyrics_matches.pop(0)
+        track["has_lyrics"] = bool(track["lyrics"])
+        matched_count += 1
+
+    unmatched_titles: list[str] = []
+    for lyrics_entry in imported_lyrics:
+        title_key = compact_text(lyrics_entry["track_title"]).casefold()
+        if title_key in lyrics_by_title and lyrics_by_title[title_key]:
+            unmatched_titles.append(lyrics_entry["track_title"])
+            lyrics_by_title[title_key].pop(0)
+
+    return matched_count, unmatched_titles
 
 
 def normalize_import_header(raw_header: object) -> str:
@@ -1900,22 +2005,42 @@ def render_import_tool() -> None:
         type=["xlsx"],
         key="track_info_import_file",
     )
+    uploaded_lyrics_file = st.file_uploader(
+        "Upload a previously exported Lyrics Word file (optional)",
+        type=["docx"],
+        key="track_lyrics_import_file",
+    )
     if st.button(
-        "Load Excel Into Form",
+        "Load Export(s) Into Form",
         key="load_track_info_import",
         disabled=uploaded_file is None,
         use_container_width=True,
     ):
         try:
             imported_workbook = parse_imported_workbook(uploaded_file.getvalue())
+            message_parts = [
+                f"Loaded {len(imported_workbook['tracks'])} track(s) from the workbook."
+            ]
+            if uploaded_lyrics_file is not None:
+                imported_lyrics = parse_imported_lyrics_docx(uploaded_lyrics_file.getvalue())
+                matched_count, unmatched_titles = merge_imported_lyrics(
+                    imported_workbook,
+                    imported_lyrics,
+                )
+                message_parts.append(f"Matched lyrics for {matched_count} track(s).")
+                if unmatched_titles:
+                    unmatched_preview = ", ".join(unmatched_titles[:3])
+                    if len(unmatched_titles) > 3:
+                        unmatched_preview += ", ..."
+                    message_parts.append(
+                        f"Could not match lyrics for: {unmatched_preview}"
+                    )
         except Exception as exc:
             st.session_state["_track_info_import_error"] = str(exc)
             st.rerun()
         else:
             st.session_state["_pending_track_info_import"] = imported_workbook
-            st.session_state["_track_info_import_message"] = (
-                f"Loaded {len(imported_workbook['tracks'])} track(s) from the workbook."
-            )
+            st.session_state["_track_info_import_message"] = " ".join(message_parts)
             st.session_state["show_track_info_import"] = False
             st.rerun()
 
