@@ -1053,7 +1053,7 @@ def render_track_fields(
                         "Meter numerator:",
                         key=meter_numerator_key,
                         label_visibility="collapsed",
-                        placeholder="4",
+                        placeholder="-",
                         max_chars=3,
                     )
                 with meter_cols[1]:
@@ -1063,7 +1063,7 @@ def render_track_fields(
                         "Meter denominator:",
                         key=meter_denominator_key,
                         label_visibility="collapsed",
-                        placeholder="4",
+                        placeholder="-",
                         max_chars=3,
                     )
 
