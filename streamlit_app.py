@@ -36,15 +36,14 @@ INTRO_TEXT = (
     "instruments. "
 )
 INTRO_TEXT_EMPHASIS = (
-    "Export the excel at the bottom of the page. Please do not edit the excel "
-    "and instead use the FIX button to make any changes before exporting again. "
-    "IF the track has lyrics, please export the lyrics file separately."
+    "Export the zip at the bottom of the page. Please do not edit the exported files "
+    "and instead use the FIX button to make any changes before exporting again."
 )
 HELP_TOOLTIP_ITEMS = [
     "Exporting is only available after all required fields are completed.",
     "Expand the Required Fields dropdown at the bottom of the page to see what remaining fields must be completed.",
     'The "Reset" button clears the page.',
-    'Use the "Need to fix Track Info?" button to upload and reload the page for editing.',
+    'Use the "Need to fix Track Info?" button to upload a previously exported zip or older export files for editing.',
 ]
 
 COMPOSER_FIELDS = {
@@ -317,17 +316,13 @@ def configure_page() -> None:
                 border-color: #991b1b;
                 color: #ffffff;
             }
-            .st-key-track-info-export-excel div[data-testid="stDownloadButton"] > button:not(:disabled),
-            .st-key-track-info-export-lyrics div[data-testid="stDownloadButton"] > button:not(:disabled),
-            .st-key-track-info-export-lyrics-dialog div[data-testid="stDownloadButton"] > button:not(:disabled) {
+            .st-key-track-info-export-info div[data-testid="stDownloadButton"] > button:not(:disabled) {
                 background: #16a34a;
                 border: 1px solid #15803d;
                 color: #ffffff;
                 font-weight: 600;
             }
-            .st-key-track-info-export-excel div[data-testid="stDownloadButton"] > button:not(:disabled):hover,
-            .st-key-track-info-export-lyrics div[data-testid="stDownloadButton"] > button:not(:disabled):hover,
-            .st-key-track-info-export-lyrics-dialog div[data-testid="stDownloadButton"] > button:not(:disabled):hover {
+            .st-key-track-info-export-info div[data-testid="stDownloadButton"] > button:not(:disabled):hover {
                 background: #15803d;
                 border-color: #166534;
                 color: #ffffff;
@@ -759,6 +754,79 @@ def ensure_text_value(key: str, decimal_places: int | None = None) -> None:
         st.session_state[key] = f"{float(value):.{decimal_places}f}"
 
 
+def multi_key_count_key(track_number: int) -> str:
+    return f"track_{track_number}_multi_key_count"
+
+
+def multi_key_slot_key(track_number: int, slot_number: int) -> str:
+    return f"track_{track_number}_multi_key_slot_{slot_number}"
+
+
+def normalize_multi_key_sequence(
+    raw_values: list[object],
+    key_options: list[str],
+) -> list[str]:
+    return [
+        key_value
+        for key_value in (compact_text(raw_value) for raw_value in raw_values)
+        if key_value in key_options
+    ]
+
+
+def read_multi_key_slots(track_number: int, key_options: list[str]) -> list[str]:
+    slot_count = max(1, int(st.session_state.get(multi_key_count_key(track_number), 1) or 1))
+    return normalize_multi_key_sequence(
+        [
+            st.session_state.get(multi_key_slot_key(track_number, slot_number))
+            for slot_number in range(1, slot_count + 1)
+        ],
+        key_options,
+    )
+
+
+def set_multi_key_slots(
+    track_number: int,
+    key_options: list[str],
+    values: list[object],
+) -> None:
+    normalized_values = normalize_multi_key_sequence(values, key_options)
+    slot_count = max(1, len(normalized_values))
+    st.session_state[multi_key_count_key(track_number)] = slot_count
+
+    for slot_number in range(1, slot_count + 1):
+        st.session_state[multi_key_slot_key(track_number, slot_number)] = (
+            normalized_values[slot_number - 1]
+            if slot_number <= len(normalized_values)
+            else None
+        )
+
+
+def ensure_multi_key_slot_state(
+    track_number: int,
+    key_options: list[str],
+    default_values: list[object],
+) -> None:
+    normalized_values = normalize_multi_key_sequence(default_values, key_options)
+    count_key = multi_key_count_key(track_number)
+    slot_count = max(
+        1,
+        int(st.session_state.get(count_key, len(normalized_values) or 1) or 1),
+        len(normalized_values),
+    )
+    st.session_state[count_key] = slot_count
+
+    for slot_number in range(1, slot_count + 1):
+        slot_key = multi_key_slot_key(track_number, slot_number)
+        current_value = st.session_state.get(slot_key)
+        if current_value in key_options:
+            continue
+        st.session_state[slot_key] = (
+            normalized_values[slot_number - 1]
+            if slot_number <= len(normalized_values)
+            else None
+        )
+
+
 def read_composer_record(track_number: int, composer_number: int) -> dict[str, object]:
     prefix = composer_prefix(track_number, composer_number)
     split_default = 100.0 if composer_number == 1 else 0.0
@@ -936,6 +1004,7 @@ def render_track_fields(
             multi_key_previous_key = f"track_{track_number}_multi_key_previous"
             single_key_key = f"track_{track_number}_single_key"
             multi_keys_key = f"track_{track_number}_multi_keys"
+            multi_key_count_state_key = multi_key_count_key(track_number)
             meter_value_key = f"track_{track_number}_meter"
             meter_numerator_key = f"track_{track_number}_meter_numerator"
             meter_denominator_key = f"track_{track_number}_meter_denominator"
@@ -957,14 +1026,20 @@ def render_track_fields(
                 )
             if multi_keys_key not in st.session_state:
                 st.session_state[multi_keys_key] = current_key_values
+            if multi_key_count_state_key not in st.session_state:
+                st.session_state[multi_key_count_state_key] = max(1, len(current_key_values))
 
             if st.session_state.get(single_key_key) not in key_options:
                 st.session_state[single_key_key] = None
-            st.session_state[multi_keys_key] = [
-                key_option
-                for key_option in st.session_state.get(multi_keys_key, [])
-                if key_option in key_options
-            ]
+            st.session_state[multi_keys_key] = normalize_multi_key_sequence(
+                st.session_state.get(multi_keys_key, []),
+                key_options,
+            )
+            ensure_multi_key_slot_state(
+                track_number,
+                key_options,
+                st.session_state.get(multi_keys_key, []),
+            )
 
             meter_numerator, meter_denominator = parse_meter_components(
                 st.session_state.get(meter_value_key, "")
@@ -1014,35 +1089,75 @@ def render_track_fields(
                 multi_key_enabled = st.session_state.get(multi_key_toggle_key, False)
                 if multi_key_enabled != previous_multi_key_enabled:
                     if multi_key_enabled:
-                        current_single_key = st.session_state.get(single_key_key)
-                        existing_multi_keys = st.session_state.get(multi_keys_key, [])
-                        if current_single_key in key_options:
-                            st.session_state[multi_keys_key] = [
-                                current_single_key,
-                                *[
-                                    key_option
-                                    for key_option in existing_multi_keys
-                                    if key_option != current_single_key
-                                ],
-                            ]
+                        existing_multi_keys = normalize_multi_key_sequence(
+                            st.session_state.get(multi_keys_key, []),
+                            key_options,
+                        )
+                        if existing_multi_keys:
+                            set_multi_key_slots(
+                                track_number,
+                                key_options,
+                                existing_multi_keys,
+                            )
                         else:
-                            st.session_state[multi_keys_key] = existing_multi_keys
+                            current_single_key = st.session_state.get(single_key_key)
+                            set_multi_key_slots(
+                                track_number,
+                                key_options,
+                                [current_single_key] if current_single_key in key_options else [],
+                            )
                     else:
-                        current_multi_keys = st.session_state.get(multi_keys_key, [])
+                        current_multi_keys = read_multi_key_slots(track_number, key_options)
+                        st.session_state[multi_keys_key] = current_multi_keys
                         st.session_state[single_key_key] = (
                             current_multi_keys[0] if current_multi_keys else None
                         )
                     st.session_state[multi_key_previous_key] = multi_key_enabled
 
                 if multi_key_enabled:
-                    selected_keys = st.multiselect(
-                        "Key:",
-                        options=key_options,
-                        key=multi_keys_key,
-                        label_visibility="collapsed",
-                        placeholder="Select key",
+                    slot_count = max(
+                        1,
+                        int(st.session_state.get(multi_key_count_state_key, 1) or 1),
                     )
+                    for slot_number in range(1, slot_count + 1):
+                        st.selectbox(
+                            f"Key {slot_number}:",
+                            options=key_options,
+                            index=None,
+                            placeholder="Select key",
+                            key=multi_key_slot_key(track_number, slot_number),
+                            label_visibility="collapsed",
+                        )
+
+                    selected_keys = read_multi_key_slots(track_number, key_options)
+                    st.session_state[multi_keys_key] = selected_keys
                     st.session_state[key_value_key] = ", ".join(selected_keys)
+
+                    key_control_cols = st.columns([1, 1])
+                    with key_control_cols[0]:
+                        if st.button(
+                            "+",
+                            key=f"track_{track_number}_add_multi_key_slot",
+                            help="Add another key to the multi-key sequence",
+                            use_container_width=True,
+                        ):
+                            st.session_state[multi_key_count_state_key] = slot_count + 1
+                            st.session_state[multi_key_slot_key(track_number, slot_count + 1)] = None
+                            st.rerun()
+                    with key_control_cols[1]:
+                        if st.button(
+                            "-",
+                            key=f"track_{track_number}_remove_multi_key_slot",
+                            help="Remove the last key from the multi-key sequence",
+                            disabled=slot_count <= 1,
+                            use_container_width=True,
+                        ):
+                            st.session_state.pop(
+                                multi_key_slot_key(track_number, slot_count),
+                                None,
+                            )
+                            st.session_state[multi_key_count_state_key] = max(1, slot_count - 1)
+                            st.rerun()
                 else:
                     st.selectbox(
                         "Key:",
@@ -1879,6 +1994,7 @@ def build_import_state(imported_workbook: dict[str, object]) -> dict[str, object
                 f"track_{track_number}_lyrics": track.get("lyrics", ""),
                 f"track_{track_number}_multi_key_enabled": multi_key_enabled,
                 f"track_{track_number}_multi_key_previous": multi_key_enabled,
+                f"track_{track_number}_multi_key_count": max(1, len(key_values)),
                 f"track_{track_number}_single_key": (
                     key_values[0] if len(key_values) == 1 else None
                 ),
@@ -1940,6 +2056,7 @@ def build_default_form_state() -> dict[str, object]:
         "track_1_featured_instrument": None,
         "track_1_multi_key_enabled": False,
         "track_1_multi_key_previous": False,
+        "track_1_multi_key_count": 1,
         "track_1_single_key": None,
         "track_1_multi_keys": [],
         "track_1_composer_count": 1,
@@ -2017,15 +2134,19 @@ def render_import_tool() -> None:
         return
 
     uploaded_file = st.file_uploader(
-        "Upload a previously exported Track Info Excel file",
-        type=["xlsx"],
+        "Upload a previously exported Track Info zip or Excel file",
+        type=["zip", "xlsx"],
         key="track_info_import_file",
     )
-    uploaded_lyrics_file = st.file_uploader(
-        "Upload a previously exported Lyrics Word file (optional)",
-        type=["docx"],
-        key="track_lyrics_import_file",
-    )
+    uploaded_lyrics_file = None
+    if uploaded_file is not None and uploaded_file.name.lower().endswith(".zip"):
+        st.caption("This exported zip can already include the lyrics document.")
+    else:
+        uploaded_lyrics_file = st.file_uploader(
+            "Upload a previously exported Lyrics Word file (optional)",
+            type=["docx"],
+            key="track_lyrics_import_file",
+        )
     if st.button(
         "Load Export(s) Into Form",
         key="load_track_info_import",
@@ -2033,17 +2154,16 @@ def render_import_tool() -> None:
         use_container_width=True,
     ):
         try:
-            imported_workbook = parse_imported_workbook(uploaded_file.getvalue())
-            message_parts = [
-                f"Loaded {len(imported_workbook['tracks'])} track(s) from the workbook."
-            ]
-            if uploaded_lyrics_file is not None:
-                imported_lyrics = parse_imported_lyrics_docx(uploaded_lyrics_file.getvalue())
-                matched_count, unmatched_titles = merge_imported_lyrics(
-                    imported_workbook,
-                    imported_lyrics,
+            message_parts: list[str]
+            if uploaded_file.name.lower().endswith(".zip"):
+                imported_workbook, matched_count, unmatched_titles = parse_imported_bundle(
+                    uploaded_file.getvalue()
                 )
-                message_parts.append(f"Matched lyrics for {matched_count} track(s).")
+                message_parts = [
+                    f"Loaded {len(imported_workbook['tracks'])} track(s) from the zip bundle."
+                ]
+                if matched_count:
+                    message_parts.append(f"Matched lyrics for {matched_count} track(s).")
                 if unmatched_titles:
                     unmatched_preview = ", ".join(unmatched_titles[:3])
                     if len(unmatched_titles) > 3:
@@ -2051,6 +2171,27 @@ def render_import_tool() -> None:
                     message_parts.append(
                         f"Could not match lyrics for: {unmatched_preview}"
                     )
+            else:
+                imported_workbook = parse_imported_workbook(uploaded_file.getvalue())
+                message_parts = [
+                    f"Loaded {len(imported_workbook['tracks'])} track(s) from the workbook."
+                ]
+                if uploaded_lyrics_file is not None:
+                    imported_lyrics = parse_imported_lyrics_docx(
+                        uploaded_lyrics_file.getvalue()
+                    )
+                    matched_count, unmatched_titles = merge_imported_lyrics(
+                        imported_workbook,
+                        imported_lyrics,
+                    )
+                    message_parts.append(f"Matched lyrics for {matched_count} track(s).")
+                    if unmatched_titles:
+                        unmatched_preview = ", ".join(unmatched_titles[:3])
+                        if len(unmatched_titles) > 3:
+                            unmatched_preview += ", ..."
+                        message_parts.append(
+                            f"Could not match lyrics for: {unmatched_preview}"
+                        )
         except Exception as exc:
             st.session_state["_track_info_import_error"] = str(exc)
             st.rerun()
@@ -2153,6 +2294,69 @@ def safe_lyrics_filename(album_name: str) -> str:
     return f"{slug}_Lyrics_{timestamp}.docx"
 
 
+def safe_bundle_filename(album_name: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", album_name).strip("_")
+    if not slug:
+        slug = "Track_Info"
+    timestamp = datetime.now().strftime("%Y%m%d")
+    return f"{slug}_Track_Info_Bundle_{timestamp}.zip"
+
+
+def build_export_bundle(tracks: list[dict[str, object]], album_name: str) -> bytes:
+    workbook_file_name = safe_filename(album_name)
+    workbook_bytes = build_excel_workbook(tracks)
+    lyric_tracks = tracks_with_lyrics(tracks)
+
+    output = BytesIO()
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as export_zip:
+        export_zip.writestr(workbook_file_name, workbook_bytes)
+        if lyric_tracks:
+            export_zip.writestr(
+                safe_lyrics_filename(album_name),
+                build_lyrics_docx(tracks),
+            )
+    output.seek(0)
+    return output.getvalue()
+
+
+def parse_imported_bundle(file_bytes: bytes) -> tuple[dict[str, object], int, list[str]]:
+    try:
+        with zipfile.ZipFile(BytesIO(file_bytes)) as bundle_zip:
+            bundle_members = [
+                info.filename
+                for info in bundle_zip.infolist()
+                if not info.is_dir() and not info.filename.startswith("__MACOSX/")
+            ]
+            workbook_members = [
+                member for member in bundle_members if member.lower().endswith(".xlsx")
+            ]
+            lyrics_members = [
+                member for member in bundle_members if member.lower().endswith(".docx")
+            ]
+
+            if not workbook_members:
+                raise ValueError("This zip file does not contain a Track Info Excel file.")
+            if len(workbook_members) > 1:
+                raise ValueError("This zip file contains multiple Excel files. Please keep only one Track Info export in the bundle.")
+            if len(lyrics_members) > 1:
+                raise ValueError("This zip file contains multiple Word files. Please keep only one Lyrics export in the bundle.")
+
+            imported_workbook = parse_imported_workbook(bundle_zip.read(workbook_members[0]))
+            matched_count = 0
+            unmatched_titles: list[str] = []
+
+            if lyrics_members:
+                imported_lyrics = parse_imported_lyrics_docx(bundle_zip.read(lyrics_members[0]))
+                matched_count, unmatched_titles = merge_imported_lyrics(
+                    imported_workbook,
+                    imported_lyrics,
+                )
+    except zipfile.BadZipFile as exc:
+        raise ValueError("This file is not a valid zip archive.") from exc
+
+    return imported_workbook, matched_count, unmatched_titles
+
+
 def mark_export_success(file_name: str) -> None:
     st.session_state["_show_export_success_dialog"] = True
     st.session_state["_export_success_file_name"] = file_name
@@ -2178,28 +2382,17 @@ def reset_form_state() -> None:
 )
 def render_export_success_dialog(export_success_nonce: int) -> None:
     _ = export_success_nonce
-    st.success("Your Track Info file was successfully exported.")
+    st.success("Your Track Info zip was successfully exported.")
     export_file_name = compact_text(st.session_state.get("_export_success_file_name", ""))
     if export_file_name:
         st.caption(export_file_name)
 
     track_count = int(st.session_state.get("track_count", 1))
     tracks = collect_tracks(track_count)
-    lyric_tracks = tracks_with_lyrics(tracks)
-    if lyric_tracks:
-        lyrics_docx_bytes = build_lyrics_docx(tracks)
-        lyrics_file_name = safe_lyrics_filename(
-            compact_text(st.session_state.get("album_name", ""))
-        )
-        with st.container(key="track-info-export-lyrics-dialog"):
-            st.download_button(
-                "Export Lyrics",
-                data=lyrics_docx_bytes,
-                file_name=lyrics_file_name,
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                key="export_lyrics_dialog",
-                use_container_width=True,
-            )
+    if tracks_with_lyrics(tracks):
+        st.caption("The zip includes both the Track Info Excel file and the Lyrics Word file.")
+    else:
+        st.caption("The zip includes the Track Info Excel file.")
 
     if st.button(
         "Close",
@@ -2219,36 +2412,22 @@ def render_export(track_count: int) -> None:
             for message in messages:
                 st.warning(message)
 
-    workbook_bytes = build_excel_workbook(tracks)
-    workbook_file_name = safe_filename(compact_text(st.session_state.get("album_name", "")))
-    lyric_tracks = tracks_with_lyrics(tracks)
-    lyrics_docx_bytes = build_lyrics_docx(tracks) if lyric_tracks else b""
-    lyrics_file_name = safe_lyrics_filename(
-        compact_text(st.session_state.get("album_name", ""))
-    )
+    album_name = compact_text(st.session_state.get("album_name", ""))
+    bundle_bytes = build_export_bundle(tracks, album_name)
+    bundle_file_name = safe_bundle_filename(album_name)
     action_cols = st.columns([4, 1])
     with action_cols[0]:
-        with st.container(key="track-info-export-excel"):
+        with st.container(key="track-info-export-info"):
             st.download_button(
-                "Export Excel",
-                data=workbook_bytes,
-                file_name=workbook_file_name,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="export_excel",
+                "Export Info",
+                data=bundle_bytes,
+                file_name=bundle_file_name,
+                mime="application/zip",
+                key="export_info",
                 on_click=mark_export_success,
-                args=(workbook_file_name,),
+                args=(bundle_file_name,),
                 disabled=bool(messages),
                 type="primary",
-                use_container_width=True,
-            )
-        with st.container(key="track-info-export-lyrics"):
-            st.download_button(
-                "Export Lyrics",
-                data=lyrics_docx_bytes,
-                file_name=lyrics_file_name,
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                key="export_lyrics",
-                disabled=bool(messages) or not lyric_tracks,
                 use_container_width=True,
             )
     with action_cols[1]:
