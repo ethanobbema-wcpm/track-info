@@ -2,7 +2,7 @@
 
 Track Info is a Streamlit app for collecting album, track, instrumentation, lyrics, and composer metadata, then exporting the result as a zip bundle.
 
-The app supports a round-trip workflow through the `Need to fix Track Info?` section at the bottom of the page, where users can upload a previously exported Track Info zip bundle or older export files, repopulate the form, edit it, and export a fresh version.
+The app supports a round-trip workflow through the `Need to fix Track Info?` section at the bottom of the page, where users can upload a previously exported Track Info zip bundle, repopulate the form, edit it, and export a fresh version.
 
 All data-entry fields are required before export except `DSP Links (Spotify, Apple Music)` and `Artist Name (Optional)`. Missing or invalid required fields appear in the collapsed `Required Fields` section.
 
@@ -50,4 +50,4 @@ The exported workbook has a `Track Info` sheet. Each track appears on its own ro
 - `Composer 2`, `PRO Affiliation 2`, `CAE/IPI 2`, `Splits 2 (%)`, `DSP Links (Spotify, Apple Music) 2`, `Artist Name 2 (Optional)`
 - Additional composer groups when needed
 
-Previously exported Track Info zip bundles can be uploaded back into the app, and the form state will be reconstructed from the included workbook and optional lyrics document so users can continue editing and export again. Older standalone workbook and lyrics exports are still supported in the import flow.
+Previously exported Track Info zip bundles can be uploaded back into the app, and the form state will be reconstructed from the included workbook and optional lyrics document so users can continue editing and export again.

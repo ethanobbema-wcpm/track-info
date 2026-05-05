@@ -43,7 +43,7 @@ HELP_TOOLTIP_ITEMS = [
     "Exporting is only available after all required fields are completed.",
     "Expand the Required Fields dropdown at the bottom of the page to see what remaining fields must be completed.",
     'The "Reset" button clears the page.',
-    'Use the "Need to fix Track Info?" button to upload a previously exported zip or older export files for editing.',
+    'Use the "Need to fix Track Info?" button to upload a previously exported zip for editing.',
 ]
 
 COMPOSER_FIELDS = {
@@ -2134,64 +2134,34 @@ def render_import_tool() -> None:
         return
 
     uploaded_file = st.file_uploader(
-        "Upload a previously exported Track Info zip or Excel file",
-        type=["zip", "xlsx"],
+        "Upload a previously exported Track Info zip file",
+        type=["zip"],
         key="track_info_import_file",
     )
-    uploaded_lyrics_file = None
-    if uploaded_file is not None and uploaded_file.name.lower().endswith(".zip"):
-        st.caption("This exported zip can already include the lyrics document.")
-    else:
-        uploaded_lyrics_file = st.file_uploader(
-            "Upload a previously exported Lyrics Word file (optional)",
-            type=["docx"],
-            key="track_lyrics_import_file",
-        )
+    if uploaded_file is not None:
+        st.caption("This exported zip already includes the Track Info Excel file and the Lyrics document when one exists.")
     if st.button(
-        "Load Export(s) Into Form",
+        "Load Export Into Form",
         key="load_track_info_import",
         disabled=uploaded_file is None,
         use_container_width=True,
     ):
         try:
-            message_parts: list[str]
-            if uploaded_file.name.lower().endswith(".zip"):
-                imported_workbook, matched_count, unmatched_titles = parse_imported_bundle(
-                    uploaded_file.getvalue()
+            imported_workbook, matched_count, unmatched_titles = parse_imported_bundle(
+                uploaded_file.getvalue()
+            )
+            message_parts = [
+                f"Loaded {len(imported_workbook['tracks'])} track(s) from the zip bundle."
+            ]
+            if matched_count:
+                message_parts.append(f"Matched lyrics for {matched_count} track(s).")
+            if unmatched_titles:
+                unmatched_preview = ", ".join(unmatched_titles[:3])
+                if len(unmatched_titles) > 3:
+                    unmatched_preview += ", ..."
+                message_parts.append(
+                    f"Could not match lyrics for: {unmatched_preview}"
                 )
-                message_parts = [
-                    f"Loaded {len(imported_workbook['tracks'])} track(s) from the zip bundle."
-                ]
-                if matched_count:
-                    message_parts.append(f"Matched lyrics for {matched_count} track(s).")
-                if unmatched_titles:
-                    unmatched_preview = ", ".join(unmatched_titles[:3])
-                    if len(unmatched_titles) > 3:
-                        unmatched_preview += ", ..."
-                    message_parts.append(
-                        f"Could not match lyrics for: {unmatched_preview}"
-                    )
-            else:
-                imported_workbook = parse_imported_workbook(uploaded_file.getvalue())
-                message_parts = [
-                    f"Loaded {len(imported_workbook['tracks'])} track(s) from the workbook."
-                ]
-                if uploaded_lyrics_file is not None:
-                    imported_lyrics = parse_imported_lyrics_docx(
-                        uploaded_lyrics_file.getvalue()
-                    )
-                    matched_count, unmatched_titles = merge_imported_lyrics(
-                        imported_workbook,
-                        imported_lyrics,
-                    )
-                    message_parts.append(f"Matched lyrics for {matched_count} track(s).")
-                    if unmatched_titles:
-                        unmatched_preview = ", ".join(unmatched_titles[:3])
-                        if len(unmatched_titles) > 3:
-                            unmatched_preview += ", ..."
-                        message_parts.append(
-                            f"Could not match lyrics for: {unmatched_preview}"
-                        )
         except Exception as exc:
             st.session_state["_track_info_import_error"] = str(exc)
             st.rerun()
