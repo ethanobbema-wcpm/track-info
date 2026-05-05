@@ -51,10 +51,17 @@ COMPOSER_FIELDS = {
     "pro_affiliation": "PRO Affiliation:",
     "cae_ipi": "CAE/IPI",
     "split": "Splits:",
-    "dsp_link": "DSP Links (Spotify, Apple Music):",
+    "spotify_link": "DSP Links - Spotify:",
+    "apple_music_link": "Apple Music:",
     "artist_name": "Artist Name (Optional):",
 }
-COMPOSER_TEXT_FIELDS = ("composer", "pro_affiliation", "dsp_link", "artist_name")
+COMPOSER_TEXT_FIELDS = (
+    "composer",
+    "pro_affiliation",
+    "spotify_link",
+    "apple_music_link",
+    "artist_name",
+)
 
 BASE_HEADERS = [
     "Album Name",
@@ -727,6 +734,31 @@ def clean_multiline_text(value: object) -> str:
     return "\n".join(line.rstrip() for line in text.split("\n"))
 
 
+def combine_dsp_links(spotify_link: object, apple_music_link: object) -> str:
+    spotify_text = compact_text(spotify_link)
+    apple_text = compact_text(apple_music_link)
+
+    if spotify_text and apple_text:
+        return f"{spotify_text}, {apple_text}"
+    return spotify_text or apple_text
+
+
+def parse_dsp_links(raw_value: object) -> tuple[str, str]:
+    value = compact_text(raw_value)
+    if not value:
+        return "", ""
+
+    first_value, separator, second_value = value.partition(",")
+    if separator:
+        return compact_text(first_value), compact_text(second_value)
+
+    lowered_value = value.casefold()
+    if "apple" in lowered_value or "music.apple" in lowered_value:
+        return "", value
+
+    return value, ""
+
+
 def read_cae_ipi_value(raw_value: object) -> int | None:
     if raw_value in ("", None):
         return None
@@ -830,6 +862,10 @@ def ensure_multi_key_slot_state(
 def read_composer_record(track_number: int, composer_number: int) -> dict[str, object]:
     prefix = composer_prefix(track_number, composer_number)
     split_default = 100.0 if composer_number == 1 else 0.0
+    spotify_link = compact_text(st.session_state.get(f"{prefix}_spotify_link", ""))
+    apple_music_link = compact_text(
+        st.session_state.get(f"{prefix}_apple_music_link", "")
+    )
 
     return {
         "composer": compact_text(st.session_state.get(f"{prefix}_composer", "")),
@@ -840,7 +876,9 @@ def read_composer_record(track_number: int, composer_number: int) -> dict[str, o
         "split": parse_split_value(
             st.session_state.get(f"{prefix}_split", f"{split_default:.2f}")
         ),
-        "dsp_link": compact_text(st.session_state.get(f"{prefix}_dsp_link", "")),
+        "spotify_link": spotify_link,
+        "apple_music_link": apple_music_link,
+        "dsp_link": combine_dsp_links(spotify_link, apple_music_link),
         "artist_name": compact_text(st.session_state.get(f"{prefix}_artist_name", "")),
     }
 
@@ -862,7 +900,7 @@ def composer_label(record: dict[str, object]) -> str:
     parts.append(f"{read_split_value(record.get('split')):g}%")
     if record["artist_name"]:
         parts.append(f"Artist: {record['artist_name']}")
-    if record["dsp_link"]:
+    if record["spotify_link"] or record["apple_music_link"]:
         parts.append("DSP link")
 
     return " | ".join(parts)
@@ -886,7 +924,8 @@ def build_composer_lookup(track_count: int) -> dict[str, dict[str, object]]:
                     record["pro_affiliation"].casefold(),
                     "" if record["cae_ipi"] is None else str(record["cae_ipi"]),
                     f"{read_split_value(record.get('split')):.4f}",
-                    record["dsp_link"].casefold(),
+                    record["spotify_link"].casefold(),
+                    record["apple_music_link"].casefold(),
                     record["artist_name"].casefold(),
                 ]
             )
@@ -1299,8 +1338,8 @@ def render_track_fields(
                 ensure_text_value(f"{prefix}_cae_ipi")
                 ensure_text_value(split_key, decimal_places=2)
 
-                composer_col, pro_col, cae_col, split_col, dsp_col, artist_col = st.columns(
-                    [2, 1.2, 1.1, 0.9, 2, 1.8]
+                composer_col, pro_col, cae_col, split_col, spotify_col, apple_col, artist_col = st.columns(
+                    [2, 0.6, 1.1, 0.9, 1, 1, 1.8]
                 )
                 with composer_col:
                     st.text_input("Composer:", key=f"{prefix}_composer")
@@ -1316,10 +1355,15 @@ def render_track_fields(
                         "Splits:",
                         key=split_key,
                     )
-                with dsp_col:
+                with spotify_col:
                     st.text_input(
-                        "DSP Links (Spotify, Apple Music):",
-                        key=f"{prefix}_dsp_link",
+                        "DSP Links - Spotify:",
+                        key=f"{prefix}_spotify_link",
+                    )
+                with apple_col:
+                    st.text_input(
+                        "Apple Music:",
+                        key=f"{prefix}_apple_music_link",
                     )
                 with artist_col:
                     st.text_input(
@@ -1444,7 +1488,10 @@ def track_to_row(track: dict[str, object], max_composers: int) -> list[object]:
                     record["pro_affiliation"],
                     record["cae_ipi"] if record["cae_ipi"] is not None else "",
                     read_split_value(record["split"]) / 100,
-                    record["dsp_link"],
+                    combine_dsp_links(
+                        record.get("spotify_link", ""),
+                        record.get("apple_music_link", ""),
+                    ),
                     record["artist_name"],
                 ]
             )
@@ -1816,6 +1863,13 @@ def imported_composer_record(
     header_index: dict[str, int],
     composer_number: int,
 ) -> dict[str, object]:
+    imported_dsp_link = imported_row_value(
+        row_values,
+        header_index,
+        f"DSP Links (Spotify, Apple Music) {composer_number}",
+    )
+    spotify_link, apple_music_link = parse_dsp_links(imported_dsp_link)
+
     return {
         "composer": compact_text(
             imported_row_value(row_values, header_index, f"Composer {composer_number}")
@@ -1837,13 +1891,9 @@ def imported_composer_record(
                 f"Splits {composer_number} (%)",
             )
         ),
-        "dsp_link": compact_text(
-            imported_row_value(
-                row_values,
-                header_index,
-                f"DSP Links (Spotify, Apple Music) {composer_number}",
-            )
-        ),
+        "spotify_link": spotify_link,
+        "apple_music_link": apple_music_link,
+        "dsp_link": combine_dsp_links(spotify_link, apple_music_link),
         "artist_name": compact_text(
             imported_row_value(
                 row_values,
@@ -2008,6 +2058,8 @@ def build_import_state(imported_workbook: dict[str, object]) -> dict[str, object
                 "pro_affiliation": "",
                 "cae_ipi": None,
                 "split": 100.0,
+                "spotify_link": "",
+                "apple_music_link": "",
                 "dsp_link": "",
                 "artist_name": "",
             }
@@ -2026,7 +2078,8 @@ def build_import_state(imported_workbook: dict[str, object]) -> dict[str, object
                         "" if record["cae_ipi"] is None else str(record["cae_ipi"])
                     ),
                     f"{prefix}_split": f"{read_split_value(record['split'], split_default):.2f}",
-                    f"{prefix}_dsp_link": record["dsp_link"],
+                    f"{prefix}_spotify_link": record.get("spotify_link", ""),
+                    f"{prefix}_apple_music_link": record.get("apple_music_link", ""),
                     f"{prefix}_artist_name": record["artist_name"],
                 }
             )
@@ -2065,7 +2118,8 @@ def build_default_form_state() -> dict[str, object]:
         f"{composer_prefix(1, 1)}_pro_affiliation": "",
         f"{composer_prefix(1, 1)}_cae_ipi": "",
         f"{composer_prefix(1, 1)}_split": "100.00",
-        f"{composer_prefix(1, 1)}_dsp_link": "",
+        f"{composer_prefix(1, 1)}_spotify_link": "",
+        f"{composer_prefix(1, 1)}_apple_music_link": "",
         f"{composer_prefix(1, 1)}_artist_name": "",
     }
 
