@@ -1339,7 +1339,7 @@ def render_track_fields(
                 ensure_text_value(split_key, decimal_places=2)
 
                 composer_col, pro_col, cae_col, split_col, spotify_col, apple_col, artist_col = st.columns(
-                    [2, 0.6, 1.1, 0.9, 1, 1, 1.8]
+                    [2, 0.9, 0.8, 0.9, 1, 1, 1.8]
                 )
                 with composer_col:
                     st.text_input("Composer:", key=f"{prefix}_composer")
