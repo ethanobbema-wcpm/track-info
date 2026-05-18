@@ -2302,24 +2302,22 @@ def validation_messages(tracks: list[dict[str, object]]) -> list[str]:
     return messages
 
 
+def safe_export_name_part(album_name: str) -> str:
+    sanitized = re.sub(r'[<>:"/\\\\|?*]+', " ", str(album_name or "")).strip()
+    sanitized = re.sub(r"\s+", " ", sanitized)
+    return sanitized or "Track Info"
+
+
 def safe_filename(album_name: str) -> str:
-    slug = re.sub(r"[^A-Za-z0-9]+", "_", album_name).strip("_")
-    if not slug:
-        slug = "Track_Info"
-    timestamp = datetime.now().strftime("%Y%m%d")
-    return f"{slug}_Track_Info_{timestamp}.xlsx"
+    return f"{safe_export_name_part(album_name)}_COMPOSER INFO.xlsx"
 
 
 def safe_lyrics_filename(album_name: str) -> str:
-    slug = re.sub(r"[^A-Za-z0-9]+", "_", album_name).strip("_")
-    if not slug:
-        slug = "Track_Info"
-    timestamp = datetime.now().strftime("%Y%m%d")
-    return f"{slug}_Lyrics_{timestamp}.docx"
+    return f"{safe_export_name_part(album_name)}_LYRICS.docx"
 
 
 def safe_bundle_filename(album_name: str) -> str:
-    slug = re.sub(r"[^A-Za-z0-9]+", "_", album_name).strip("_")
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", safe_export_name_part(album_name)).strip("_")
     if not slug:
         slug = "Track_Info"
     timestamp = datetime.now().strftime("%Y%m%d")
