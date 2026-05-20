@@ -53,7 +53,7 @@ COMPOSER_FIELDS = {
     "split": "Splits:",
     "spotify_link": "DSP Links - Spotify:",
     "apple_music_link": "Apple Music:",
-    "artist_name": "Artist Name (Optional):",
+    "artist_name": "Artist Name:",
 }
 COMPOSER_TEXT_FIELDS = (
     "composer",
@@ -1359,16 +1359,19 @@ def render_track_fields(
                     st.text_input(
                         "DSP Links - Spotify:",
                         key=f"{prefix}_spotify_link",
+                        placeholder="Optional",
                     )
                 with apple_col:
                     st.text_input(
                         "Apple Music:",
                         key=f"{prefix}_apple_music_link",
+                        placeholder="Optional",
                     )
                 with artist_col:
                     st.text_input(
-                        "Artist Name (Optional):",
+                        "Artist Name:",
                         key=f"{prefix}_artist_name",
+                        placeholder="Optional",
                     )
 
             add_col, remove_col, _ = st.columns([1, 1, 4])
