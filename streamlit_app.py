@@ -759,18 +759,23 @@ def parse_dsp_links(raw_value: object) -> tuple[str, str]:
     return value, ""
 
 
-def read_cae_ipi_value(raw_value: object) -> int | None:
+def read_cae_ipi_value(raw_value: object) -> str | None:
     if raw_value in ("", None):
         return None
+
+    if isinstance(raw_value, int):
+        return str(raw_value)
+
+    if isinstance(raw_value, float):
+        if not raw_value.is_integer():
+            return None
+        return str(int(raw_value))
 
     raw_text = str(raw_value).strip()
     if not raw_text.isdigit():
         return None
 
-    try:
-        return int(raw_text)
-    except (TypeError, ValueError):
-        return None
+    return raw_text
 
 
 def ensure_text_value(key: str, decimal_places: int | None = None) -> None:
@@ -1563,7 +1568,7 @@ def build_excel_workbook(tracks: list[dict[str, object]]) -> bytes:
                 sheet.cell(row=row_idx, column=col_idx).number_format = "0.00%"
         elif header.startswith("CAE/IPI "):
             for row_idx in range(2, sheet.max_row + 1):
-                sheet.cell(row=row_idx, column=col_idx).number_format = "0"
+                sheet.cell(row=row_idx, column=col_idx).number_format = "@"
 
     sheet.row_dimensions[1].height = 34
 
