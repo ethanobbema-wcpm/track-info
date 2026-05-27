@@ -323,13 +323,15 @@ def configure_page() -> None:
                 border-color: #991b1b;
                 color: #ffffff;
             }
-            .st-key-track-info-export-info div[data-testid="stDownloadButton"] > button:not(:disabled) {
+            .st-key-track-info-export-info div[data-testid="stButton"] > button:not(:disabled),
+            .st-key-track-info-export-download div[data-testid="stDownloadButton"] > button:not(:disabled) {
                 background: #16a34a;
                 border: 1px solid #15803d;
                 color: #ffffff;
                 font-weight: 600;
             }
-            .st-key-track-info-export-info div[data-testid="stDownloadButton"] > button:not(:disabled):hover {
+            .st-key-track-info-export-info div[data-testid="stButton"] > button:not(:disabled):hover,
+            .st-key-track-info-export-download div[data-testid="stDownloadButton"] > button:not(:disabled):hover {
                 background: #15803d;
                 border-color: #166534;
                 color: #ffffff;
@@ -2405,24 +2407,40 @@ def reset_form_state() -> None:
 
 
 @st.dialog(
-    "Track Info Exported",
+    "Export Info",
     width="small",
-    icon=":material/check_circle:",
+    icon=":material/download:",
     on_dismiss=clear_export_success_dialog,
 )
 def render_export_success_dialog(export_success_nonce: int) -> None:
-    _ = export_success_nonce
-    st.success("Your Track Info zip was successfully exported.")
-    export_file_name = compact_text(st.session_state.get("_export_success_file_name", ""))
+    track_count = int(st.session_state.get("track_count", 1))
+    tracks = collect_tracks(track_count)
+    album_name = compact_text(st.session_state.get("album_name", ""))
+    bundle_bytes = build_export_bundle(tracks, album_name)
+    bundle_file_name = safe_bundle_filename(album_name)
+
+    st.success("Your current Track Info zip is ready to download.")
+    export_file_name = compact_text(
+        st.session_state.get("_export_success_file_name", bundle_file_name)
+    )
     if export_file_name:
         st.caption(export_file_name)
 
-    track_count = int(st.session_state.get("track_count", 1))
-    tracks = collect_tracks(track_count)
     if tracks_with_lyrics(tracks):
         st.caption("The zip includes both the Track Info Excel file and the Lyrics Word file.")
     else:
         st.caption("The zip includes the Track Info Excel file.")
+
+    with st.container(key="track-info-export-download"):
+        st.download_button(
+            "Download Export Info",
+            data=bundle_bytes,
+            file_name=bundle_file_name,
+            mime="application/zip",
+            key=f"download_export_info_{export_success_nonce}",
+            on_click=clear_export_success_dialog,
+            use_container_width=True,
+        )
 
     if st.button(
         "Close",
@@ -2443,23 +2461,19 @@ def render_export(track_count: int) -> None:
                 st.warning(message)
 
     album_name = compact_text(st.session_state.get("album_name", ""))
-    bundle_bytes = build_export_bundle(tracks, album_name)
     bundle_file_name = safe_bundle_filename(album_name)
     action_cols = st.columns([4, 1])
     with action_cols[0]:
         with st.container(key="track-info-export-info"):
-            st.download_button(
+            if st.button(
                 "Export Info",
-                data=bundle_bytes,
-                file_name=bundle_file_name,
-                mime="application/zip",
                 key="export_info",
-                on_click=mark_export_success,
-                args=(bundle_file_name,),
                 disabled=bool(messages),
                 type="primary",
                 use_container_width=True,
-            )
+            ):
+                mark_export_success(bundle_file_name)
+                st.rerun()
     with action_cols[1]:
         with st.container(key="track-info-reset"):
             if st.button(
