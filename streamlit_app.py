@@ -45,6 +45,31 @@ HELP_TOOLTIP_ITEMS = [
     'The "Reset" button clears the page.',
     'Use the "Need to fix Track Info?" button to upload a previously exported zip for editing.',
 ]
+EXPLICIT_LYRICS_PATTERNS = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"\bmother[\s-]*fuck(?:er|ers|ing|in'?|ed|s)?\b",
+        r"\bcock[\s-]*suck(?:er|ers|ing|in'?|ed|s)?\b",
+        r"\bfuck(?:er|ers|ing|in'?|ed|s)?\b",
+        r"\bshit(?:ty|ting|tin'?|head|heads|s)?\b",
+        r"\bpiss(?:ed|ing|in'?|er|ers)?\b",
+        r"\bcunt(?:s)?\b",
+        r"\btit(?:s)?\b",
+        r"\bpuss(?:y|ies)\b",
+        r"\bass[\s-]*hole(?:s)?\b",
+        r"\bwog(?:s)?\b",
+        r"\bwop(?:s)?\b",
+        r"\bnigg(?:er|ers|a|as)\b",
+        r"\bkike(?:s)?\b",
+        r"\bgook(?:s)?\b",
+        r"\bgyps(?:y|ies)\b",
+        r"\bfaggot(?:s)?\b",
+        r"\bbitch(?:es)?\b",
+        r"\bbastard(?:s)?\b",
+        r"\bdick(?:head|heads|s)?\b",
+        r"\bslut(?:s)?\b",
+    )
+)
 
 COMPOSER_FIELDS = {
     "composer": "Composer:",
@@ -1588,6 +1613,21 @@ def tracks_with_lyrics(tracks: list[dict[str, object]]) -> list[dict[str, object
     ]
 
 
+def lyrics_contain_explicit_content(lyrics_text: object) -> bool:
+    normalized_lyrics = str(lyrics_text or "")
+    return any(
+        pattern.search(normalized_lyrics) is not None
+        for pattern in EXPLICIT_LYRICS_PATTERNS
+    )
+
+
+def tracks_have_explicit_lyrics(tracks: list[dict[str, object]]) -> bool:
+    return any(
+        lyrics_contain_explicit_content(track.get("lyrics", ""))
+        for track in tracks_with_lyrics(tracks)
+    )
+
+
 def docx_text_run_xml(text: str, *, bold: bool = False, font_size_half_points: int = 22) -> str:
     run_properties = [f'<w:sz w:val="{font_size_half_points}"/>']
     if bold:
@@ -2322,8 +2362,9 @@ def safe_filename(album_name: str) -> str:
     return f"{safe_export_name_part(album_name)}_COMPOSER INFO.xlsx"
 
 
-def safe_lyrics_filename(album_name: str) -> str:
-    return f"{safe_export_name_part(album_name)}_LYRICS.docx"
+def safe_lyrics_filename(album_name: str, *, is_explicit: bool = False) -> str:
+    explicit_suffix = "_EXPLICIT" if is_explicit else ""
+    return f"{safe_export_name_part(album_name)}_LYRICS{explicit_suffix}.docx"
 
 
 def safe_bundle_filename(album_name: str) -> str:
@@ -2338,13 +2379,14 @@ def build_export_bundle(tracks: list[dict[str, object]], album_name: str) -> byt
     workbook_file_name = safe_filename(album_name)
     workbook_bytes = build_excel_workbook(tracks)
     lyric_tracks = tracks_with_lyrics(tracks)
+    lyrics_are_explicit = tracks_have_explicit_lyrics(tracks)
 
     output = BytesIO()
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as export_zip:
         export_zip.writestr(workbook_file_name, workbook_bytes)
         if lyric_tracks:
             export_zip.writestr(
-                safe_lyrics_filename(album_name),
+                safe_lyrics_filename(album_name, is_explicit=lyrics_are_explicit),
                 build_lyrics_docx(tracks),
             )
     output.seek(0)
@@ -2428,6 +2470,8 @@ def render_export_success_dialog(export_success_nonce: int) -> None:
 
     if tracks_with_lyrics(tracks):
         st.caption("The zip includes both the Track Info Excel file and the Lyrics Word file.")
+        if tracks_have_explicit_lyrics(tracks):
+            st.caption("The lyrics file is marked with _EXPLICIT.")
     else:
         st.caption("The zip includes the Track Info Excel file.")
 
