@@ -1162,7 +1162,7 @@ def render_track_fields(
             st.session_state.setdefault(lyrics_toggle_key, False)
             st.session_state.setdefault(lyrics_key, "")
 
-            label_cols = st.columns([2.75, 0.55, 1.35, 0.9, 0.85, 1.0])
+            label_cols = st.columns([2.75, 0.52, 1.55, 0.68, 0.85, 1.0])
             with label_cols[0]:
                 st.markdown("Title:")
             with label_cols[1]:
@@ -1181,7 +1181,7 @@ def render_track_fields(
                 multi_key_previous_key,
                 multi_key_enabled,
             )
-            input_cols = st.columns([2.75, 0.55, 1.35, 0.9, 0.85, 1.0])
+            input_cols = st.columns([2.75, 0.52, 1.55, 0.68, 0.85, 1.0])
             with input_cols[0]:
                 st.text_input(
                     "Title:",
