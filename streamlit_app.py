@@ -826,6 +826,14 @@ def multi_key_slot_key(track_number: int, slot_number: int) -> str:
     return f"track_{track_number}_multi_key_slot_{slot_number}"
 
 
+def multi_key_picker_key(track_number: int) -> str:
+    return f"track_{track_number}_multi_key_picker"
+
+
+def pending_multi_key_add_key(track_number: int) -> str:
+    return f"track_{track_number}_pending_multi_key_add"
+
+
 def normalize_multi_key_sequence(
     raw_values: list[object],
     key_options: list[str],
@@ -889,6 +897,40 @@ def ensure_multi_key_slot_state(
             if slot_number <= len(normalized_values)
             else None
         )
+
+
+def add_multi_key_selection(track_number: int, key_options: list[str]) -> None:
+    multi_keys_state_key = f"track_{track_number}_multi_keys"
+    key_value_key = f"track_{track_number}_key"
+    picker_state_key = multi_key_picker_key(track_number)
+
+    selected_key = st.session_state.get(picker_state_key)
+    if selected_key not in key_options:
+        return
+
+    selected_keys = normalize_multi_key_sequence(
+        st.session_state.get(multi_keys_state_key, []),
+        key_options,
+    )
+    st.session_state[multi_keys_state_key] = [*selected_keys, selected_key]
+    st.session_state[key_value_key] = ", ".join(st.session_state[multi_keys_state_key])
+    st.session_state[picker_state_key] = None
+
+
+def queue_multi_key_selection(track_number: int) -> None:
+    st.session_state[pending_multi_key_add_key(track_number)] = True
+
+
+def remove_last_multi_key_selection(track_number: int, key_options: list[str]) -> None:
+    multi_keys_state_key = f"track_{track_number}_multi_keys"
+    key_value_key = f"track_{track_number}_key"
+
+    selected_keys = normalize_multi_key_sequence(
+        st.session_state.get(multi_keys_state_key, []),
+        key_options,
+    )
+    st.session_state[multi_keys_state_key] = selected_keys[:-1]
+    st.session_state[key_value_key] = ", ".join(st.session_state[multi_keys_state_key])
 
 
 def read_composer_record(track_number: int, composer_number: int) -> dict[str, object]:
@@ -1075,7 +1117,8 @@ def render_track_fields(
             multi_key_previous_key = f"track_{track_number}_multi_key_previous"
             single_key_key = f"track_{track_number}_single_key"
             multi_keys_key = f"track_{track_number}_multi_keys"
-            multi_key_count_state_key = multi_key_count_key(track_number)
+            multi_key_picker_state_key = multi_key_picker_key(track_number)
+            pending_multi_key_add_state_key = pending_multi_key_add_key(track_number)
             meter_value_key = f"track_{track_number}_meter"
             meter_numerator_key = f"track_{track_number}_meter_numerator"
             meter_denominator_key = f"track_{track_number}_meter_denominator"
@@ -1097,8 +1140,8 @@ def render_track_fields(
                 )
             if multi_keys_key not in st.session_state:
                 st.session_state[multi_keys_key] = current_key_values
-            if multi_key_count_state_key not in st.session_state:
-                st.session_state[multi_key_count_state_key] = max(1, len(current_key_values))
+            if multi_key_picker_state_key not in st.session_state:
+                st.session_state[multi_key_picker_state_key] = None
 
             if st.session_state.get(single_key_key) not in key_options:
                 st.session_state[single_key_key] = None
@@ -1106,11 +1149,10 @@ def render_track_fields(
                 st.session_state.get(multi_keys_key, []),
                 key_options,
             )
-            ensure_multi_key_slot_state(
-                track_number,
-                key_options,
-                st.session_state.get(multi_keys_key, []),
-            )
+            if st.session_state.get(multi_key_picker_state_key) not in key_options:
+                st.session_state[multi_key_picker_state_key] = None
+            if st.session_state.pop(pending_multi_key_add_state_key, False):
+                add_multi_key_selection(track_number, key_options)
 
             meter_numerator, meter_denominator = parse_meter_components(
                 st.session_state.get(meter_value_key, "")
@@ -1165,20 +1207,17 @@ def render_track_fields(
                             key_options,
                         )
                         if existing_multi_keys:
-                            set_multi_key_slots(
-                                track_number,
-                                key_options,
-                                existing_multi_keys,
-                            )
+                            st.session_state[multi_keys_key] = existing_multi_keys
                         else:
                             current_single_key = st.session_state.get(single_key_key)
-                            set_multi_key_slots(
-                                track_number,
-                                key_options,
-                                [current_single_key] if current_single_key in key_options else [],
+                            st.session_state[multi_keys_key] = (
+                                [current_single_key] if current_single_key in key_options else []
                             )
                     else:
-                        current_multi_keys = read_multi_key_slots(track_number, key_options)
+                        current_multi_keys = normalize_multi_key_sequence(
+                            st.session_state.get(multi_keys_key, []),
+                            key_options,
+                        )
                         st.session_state[multi_keys_key] = current_multi_keys
                         st.session_state[single_key_key] = (
                             current_multi_keys[0] if current_multi_keys else None
@@ -1186,49 +1225,42 @@ def render_track_fields(
                     st.session_state[multi_key_previous_key] = multi_key_enabled
 
                 if multi_key_enabled:
-                    slot_count = max(
-                        1,
-                        int(st.session_state.get(multi_key_count_state_key, 1) or 1),
+                    selected_keys = normalize_multi_key_sequence(
+                        st.session_state.get(multi_keys_key, []),
+                        key_options,
                     )
-                    for slot_number in range(1, slot_count + 1):
-                        st.selectbox(
-                            f"Key {slot_number}:",
-                            options=key_options,
-                            index=None,
-                            placeholder="Select key",
-                            key=multi_key_slot_key(track_number, slot_number),
-                            label_visibility="collapsed",
-                        )
-
-                    selected_keys = read_multi_key_slots(track_number, key_options)
                     st.session_state[multi_keys_key] = selected_keys
                     st.session_state[key_value_key] = ", ".join(selected_keys)
-
-                    key_control_cols = st.columns([1, 1])
+                    key_control_cols = st.columns([1.2, 0.95, 0.25])
                     with key_control_cols[0]:
-                        if st.button(
-                            "+",
-                            key=f"track_{track_number}_add_multi_key_slot",
-                            help="Add another key to the multi-key sequence",
-                            use_container_width=True,
-                        ):
-                            st.session_state[multi_key_count_state_key] = slot_count + 1
-                            st.session_state[multi_key_slot_key(track_number, slot_count + 1)] = None
-                            st.rerun()
+                        st.text_input(
+                            "Key sequence:",
+                            value=st.session_state[key_value_key],
+                            placeholder="Added keys will appear here",
+                            disabled=True,
+                            label_visibility="collapsed",
+                        )
                     with key_control_cols[1]:
-                        if st.button(
+                        st.selectbox(
+                            "Add key:",
+                            options=key_options,
+                            index=None,
+                            placeholder="Add key",
+                            key=multi_key_picker_state_key,
+                            label_visibility="collapsed",
+                            on_change=queue_multi_key_selection,
+                            args=(track_number,),
+                        )
+                    with key_control_cols[2]:
+                        st.button(
                             "-",
                             key=f"track_{track_number}_remove_multi_key_slot",
                             help="Remove the last key from the multi-key sequence",
-                            disabled=slot_count <= 1,
+                            disabled=not selected_keys,
                             use_container_width=True,
-                        ):
-                            st.session_state.pop(
-                                multi_key_slot_key(track_number, slot_count),
-                                None,
-                            )
-                            st.session_state[multi_key_count_state_key] = max(1, slot_count - 1)
-                            st.rerun()
+                            on_click=remove_last_multi_key_selection,
+                            args=(track_number, key_options),
+                        )
                 else:
                     st.selectbox(
                         "Key:",
