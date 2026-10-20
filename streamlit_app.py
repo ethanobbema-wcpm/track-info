@@ -14,6 +14,8 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from admin_import_ui import render_admin_import
+
 
 APP_TITLE = "Track Info"
 INSTRUMENT_TAXONOMY_PATH = Path(__file__).with_name("taxonomy_instruments.xlsx")
@@ -2159,7 +2161,10 @@ def build_import_state(imported_workbook: dict[str, object]) -> dict[str, object
                     f"{prefix}_cae_ipi": (
                         "" if record["cae_ipi"] is None else str(record["cae_ipi"])
                     ),
-                    f"{prefix}_split": f"{read_split_value(record['split'], split_default):.2f}",
+                    f"{prefix}_split": (
+                        "" if record["split"] is None
+                        else f"{read_split_value(record['split'], split_default):.2f}"
+                    ),
                     f"{prefix}_spotify_link": record.get("spotify_link", ""),
                     f"{prefix}_apple_music_link": record.get("apple_music_link", ""),
                     f"{prefix}_artist_name": record["artist_name"],
@@ -2599,6 +2604,7 @@ def main() -> None:
     render_export(track_count)
     st.divider()
     render_import_tool()
+    render_admin_import(instrument_options, key_options)
 
 
 if __name__ == "__main__":

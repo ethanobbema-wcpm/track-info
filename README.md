@@ -51,3 +51,59 @@ The exported workbook has a `Track Info` sheet. Each track appears on its own ro
 - Additional composer groups when needed
 
 Previously exported Track Info zip bundles can be uploaded back into the app, and the form state will be reconstructed from the included workbook and optional lyrics document so users can continue editing and export again.
+
+## Private Metastarter import
+
+The owner import area is hidden during normal use. To reveal its small `·` button
+at the bottom of the page, open the app URL with `?admin=1` (or `&admin=1` when
+there are already query parameters). Click the button and enter your password.
+The URL parameter only reveals the login; upload and import require server-side
+password verification.
+
+An owner-selected password is configured as a salted PBKDF2-SHA256 hash in the
+server code. It is ready to use after deployment; the plaintext password is not
+stored in the repository. To override it, set a password in
+**Streamlit Community Cloud → app settings → Secrets**:
+
+```toml
+TRACK_INFO_ADMIN_PASSWORD = "replace-with-your-own-long-unique-password"
+```
+
+For local development, set the same environment variable or put this setting in
+`.streamlit/secrets.toml`. Never commit that file. No plaintext password is bundled with the
+app. A Streamlit secret or environment variable overrides the bundled verifier. Access is limited
+to the current session for 30 minutes. Use **Lock private import** to end it
+sooner. Five failed attempts cause a one-minute cooldown in that session.
+
+1. Upload one completed Metastarter `.xlsx` file.
+2. Optionally upload the matching legacy Track Info `.docx` file.
+3. Choose **Preview import** and review the track table and import notes.
+4. Choose **Replace form with this import** to fill the existing form.
+5. Complete any remaining Required Fields and export normally.
+
+The importer reads the Metastarter's `CDTitle`, `TrackTitle`, BPM, key, meter,
+composer names, PROs, percentage splits, CAE/IPIs, artist names, and DSP links.
+It skips the example row, blank rows, and audio versions other than the Full mix,
+and orders tracks by their filename track numbers. It rejects multiple albums
+and duplicate Full track titles. An optional Word table is matched by track
+title, regardless of row order; its nonblank BPM, key, meter and instrumentation
+take precedence, with differences reported in the notes. Introductory prose in
+the Word document is ignored.
+
+Instrument aliases map to the existing taxonomy. Synth Keys and Synth Leads both
+map to Synthesizer; the mapping is disclosed in the notes. Unsupported names are
+reported for manual selection. Sharp keys map to equivalent flat keys when needed
+by the existing dropdown list. Unknown fields are left blank rather than guessed.
+Missing composer splits remain blank. Artist/DSP details are assigned automatically
+only for a single composer; multiple-composer assignments are reported for review.
+The import does not infer a featured instrument or WCPM producer.
+
+Files are processed in memory in the current session, with 20 MB per-file and
+80 MB expanded archive limits. Previewing does not change the form. Normal zip
+re-import and export remain available as before.
+
+Run parser and Streamlit interaction checks with:
+
+```bash
+python -m unittest discover -s tests -v
+```
