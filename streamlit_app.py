@@ -474,7 +474,16 @@ def load_key_options(key_selection_modified_at: int) -> list[str]:
     _ = key_selection_modified_at
     key_options = read_single_column_workbook_in_source_order(KEY_SELECTION_PATH)
     key_options = [option for option in key_options if option != "No Key"]
-    return ["No Key", *key_options]
+    sharp_equivalents = {"Db": "C#", "Eb": "D#", "Gb": "F#", "Ab": "G#", "Bb": "A#"}
+    expanded_options = []
+    for option in key_options:
+        root = option.removesuffix("m")
+        if root in sharp_equivalents:
+            sharp_key = sharp_equivalents[root] + ("m" if option.endswith("m") else "")
+            if sharp_key not in key_options:
+                expanded_options.append(sharp_key)
+        expanded_options.append(option)
+    return ["No Key", *dict.fromkeys(expanded_options)]
 
 
 @st.cache_data

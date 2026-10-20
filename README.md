@@ -38,7 +38,7 @@ The app loads instrument names from `taxonomy_instruments.xlsx`, removes duplica
 
 When `Vocals` is selected in a track's Instrumentation field, the app shows a `Vocal Sub-list` multi-select loaded from `vocal_sublist.xlsx`.
 
-The `Key` field uses the bundled key list, includes a `No Key` option, and supports `Multi-Key?` mode that exports selected keys as a comma-separated value in the `Key` column.
+The `Key` field uses the bundled key list, adds C#, D#, F#, G#, and A# in both major and minor, includes a `No Key` option, and supports `Multi-Key?` mode that exports selected keys as a comma-separated value in the `Key` column.
 
 ## Export Bundle
 
@@ -92,8 +92,7 @@ the Word document is ignored.
 
 Instrument aliases map to the existing taxonomy. Synth Keys and Synth Leads both
 map to Synthesizer; the mapping is disclosed in the notes. Unsupported names are
-reported for manual selection. Sharp keys map to equivalent flat keys when needed
-by the existing dropdown list. Unknown fields are left blank rather than guessed.
+reported for manual selection. Sharp keys retain their spelling when imported and exported. Unknown fields are left blank rather than guessed.
 Missing composer splits remain blank. Artist/DSP details are assigned automatically
 only for a single composer; multiple-composer assignments are reported for review.
 The import does not infer a featured instrument or WCPM producer.
