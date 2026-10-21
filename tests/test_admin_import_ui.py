@@ -35,9 +35,9 @@ class AdminTests(unittest.TestCase):
     def open_login(self):
         app = AppTest.from_file(APP, default_timeout=30).run()
         self.assertFalse(app.exception)
-        self.assertFalse(any(b.key == '_admin_toggle' for b in app.button))
-        app.query_params['admin'] = '1'
-        app.run()
+        self.assertTrue(any(b.key == '_admin_toggle' for b in app.button))
+        self.assertEqual(len(app.get('file_uploader')), 0)
+        self.assertNotIn('admin', app.query_params)
         app.button(key='_admin_toggle').click().run()
         return app
 
@@ -117,9 +117,8 @@ class AdminTests(unittest.TestCase):
             self.assertEqual(app.session_state['track_1_title'], 'One')
             self.assertEqual(app.session_state['track_1_composer_1_split'], '')
             self.assertTrue(any('Splits must be a number' in w.value for w in app.warning))
-        # The imported form still runs without the administrative entry point.
-        del app.query_params['admin']
-        app.run()
+        # Locking the private area preserves the imported form on the regular page.
+        app.button(key='_admin_lock').click().run()
         self.assertFalse(app.exception)
         self.assertEqual(app.session_state['track_1_title'], 'One')
         self.assertEqual(len(app.get('file_uploader')), 0)

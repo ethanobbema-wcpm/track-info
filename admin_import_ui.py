@@ -47,11 +47,7 @@ def lock_admin() -> None:
 
 
 def render_admin_import(instruments: list[str], keys: list[str]) -> None:
-    # The query parameter reveals an entry point; it never grants access.
-    if st.query_params.get('admin') != '1':
-        lock_admin()
-        return
-    if st.button('·', key='_admin_toggle', help='Private import'):
+    if st.button('Private import', key='_admin_toggle', help='Password-protected metadata import'):
         st.session_state['_admin_panel_open'] = not st.session_state.get('_admin_panel_open', False)
     if not st.session_state.get('_admin_panel_open'):
         return

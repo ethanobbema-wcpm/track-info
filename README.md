@@ -54,11 +54,10 @@ Previously exported Track Info zip bundles can be uploaded back into the app, an
 
 ## Private Metastarter import
 
-The owner import area is hidden during normal use. To reveal its small `·` button
-at the bottom of the page, open the app URL with `?admin=1` (or `&admin=1` when
-there are already query parameters). Click the button and enter your password.
-The URL parameter only reveals the login; upload and import require server-side
-password verification.
+The regular app page includes a **Private import** button at the bottom, below
+**Need to fix Track Info?**. Click it and enter your password to reveal the upload
+area. No special link or query parameter is required. Upload and import require
+server-side password verification.
 
 An owner-selected password is configured as a salted PBKDF2-SHA256 hash in the
 server code. It is ready to use after deployment; the plaintext password is not
