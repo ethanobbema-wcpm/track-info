@@ -105,3 +105,19 @@ Run parser and Streamlit interaction checks with:
 ```bash
 python -m unittest discover -s tests -v
 ```
+
+## CoVentures
+
+The CoVentures checkbox appears between WCPM Producer and Track Count. Checking
+it sets WCPM Producer to `None` and locks that field. Unchecking restores the
+previous producer value. While checked, the album fields also include a searchable
+Category dropdown (exactly one required), a searchable Sub-Category multiselect
+(exactly three required, maximum three), and an optional multiline Album Description.
+The lists use the Categories and SubCategories sheets in the bundled
+`creative_brief_key.xlsx`, retaining the Creative Brief app's option order.
+
+CoVentures exports append CoVentures, Category, three separate Sub-Category columns,
+and Album Description to the Track Info workbook. These values return when the
+export bundle is loaded with Need to fix Track Info. Regular exports keep their
+existing columns. Loading a legacy file starts with CoVentures unchecked, and
+Reset clears the checkbox and its extra fields.

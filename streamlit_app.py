@@ -20,6 +20,8 @@ from admin_import_ui import render_admin_import
 APP_TITLE = "Track Info"
 INSTRUMENT_TAXONOMY_PATH = Path(__file__).with_name("taxonomy_instruments.xlsx")
 VOCAL_SUBLIST_PATH = Path(__file__).with_name("vocal_sublist.xlsx")
+COVENTURES_KEY_PATH = Path(__file__).with_name("creative_brief_key.xlsx")
+COVENTURES_HEADERS = ["CoVentures", "Category", "Sub-Category 1", "Sub-Category 2", "Sub-Category 3", "Album Description"]
 KEY_SELECTION_PATH = Path(__file__).with_name("key_selection.xlsx")
 LOGO_PATH = Path(__file__).with_name("wcpm_logo.png")
 TITLE_FONT_PATH = Path(__file__).with_name("plaak_title.ttf")
@@ -1043,23 +1045,69 @@ def format_saved_composer_option(option_key: str) -> str:
     return composer_label(record)
 
 
+@st.cache_data
+def load_coventures_options(modified_at: int) -> tuple[list[str], list[str]]:
+    workbook = load_workbook(COVENTURES_KEY_PATH, read_only=True, data_only=True)
+    try:
+        result = []
+        ignored = {"category", "categories", "sub category", "sub categories", "subcategory", "subcategories", "mood", "moods", "usage", "ranking"}
+        for sheet_name in ("Categories", "SubCategories"):
+            values = []
+            seen = set()
+            for row in workbook[sheet_name].iter_rows(min_row=2, max_col=1, values_only=True):
+                value = compact_text(row[0])
+                if value and value.casefold() not in seen and value.casefold() not in ignored:
+                    values.append(value)
+                    seen.add(value.casefold())
+            result.append(values)
+        return result[0], result[1]
+    finally:
+        workbook.close()
+
+
+def toggle_coventures() -> None:
+    if st.session_state.get("coventures", False):
+        st.session_state["_producer_before_coventures"] = st.session_state.get("producer", "")
+        st.session_state["producer"] = "None"
+    else:
+        st.session_state["producer"] = st.session_state.pop("_producer_before_coventures", "")
+
+
 def render_header_fields() -> int:
     st.session_state.setdefault("track_count", 1)
-    header_row = st.columns([2.2, 1.6, 0.45])
+    st.session_state.setdefault("coventures", False)
+    coventures = st.session_state["coventures"]
+    if coventures:
+        st.session_state["producer"] = "None"
+    header_row = st.columns([2.2, 1.6, 0.75, 0.45])
     with header_row[0]:
         st.text_input("Album Name:", key="album_name")
     with header_row[1]:
-        st.text_input("WCPM Producer:", key="producer")
+        st.text_input("WCPM Producer:", key="producer", disabled=coventures)
     with header_row[2]:
+        st.checkbox("CoVentures", key="coventures", on_change=toggle_coventures)
+    with header_row[3]:
         track_count = st.number_input(
-            "Track Count",
-            min_value=1,
-            max_value=200,
-            step=1,
-            format="%d",
-            key="track_count",
+            "Track Count", min_value=1, max_value=200, step=1, format="%d", key="track_count",
         )
-
+    if coventures:
+        try:
+            categories, sub_categories = load_coventures_options(COVENTURES_KEY_PATH.stat().st_mtime_ns)
+        except Exception as exc:
+            st.error(f"CoVentures category options could not be loaded: {exc}")
+            categories, sub_categories = [], []
+        if st.session_state.get("album_category") not in categories:
+            st.session_state["album_category"] = None
+        st.session_state["album_sub_categories"] = [
+            value for value in st.session_state.get("album_sub_categories", []) if value in sub_categories
+        ]
+        category_col, sub_category_col = st.columns([1, 2])
+        with category_col:
+            st.selectbox("Category (choose 1)", categories, index=None, placeholder="Type to search", key="album_category")
+        with sub_category_col:
+            st.multiselect("Sub-Category (choose 3)", sub_categories, max_selections=3,
+                           placeholder="Type to search", key="album_sub_categories")
+        st.text_area("Album Description (Optional)", key="album_description", height=104)
     return int(track_count)
 
 
@@ -1493,6 +1541,10 @@ def collect_tracks(track_count: int) -> list[dict[str, object]]:
             {
                 "album_name": compact_text(st.session_state.get("album_name", "")),
                 "producer": compact_text(st.session_state.get("producer", "")),
+                "coventures": bool(st.session_state.get("coventures", False)),
+                "category": compact_text(st.session_state.get("album_category", "")) if st.session_state.get("coventures") else "",
+                "sub_categories": list(st.session_state.get("album_sub_categories", [])) if st.session_state.get("coventures") else [],
+                "album_description": clean_multiline_text(st.session_state.get("album_description", "")) if st.session_state.get("coventures") else "",
                 "track_number": track_number,
                 "track_title": compact_text(
                     st.session_state.get(f"track_{track_number}_title", "")
@@ -1581,7 +1633,8 @@ def track_to_row(track: dict[str, object], max_composers: int) -> list[object]:
 
 def build_excel_workbook(tracks: list[dict[str, object]]) -> bytes:
     max_composers = max(1, *(len(track["composers"]) for track in tracks))
-    headers = BASE_HEADERS + composer_headers(max_composers)
+    include_coventures = any(track.get("coventures") for track in tracks)
+    headers = BASE_HEADERS + composer_headers(max_composers) + (COVENTURES_HEADERS if include_coventures else [])
 
     workbook = Workbook()
     sheet = workbook.active
@@ -1589,7 +1642,12 @@ def build_excel_workbook(tracks: list[dict[str, object]]) -> bytes:
 
     sheet.append(headers)
     for track in tracks:
-        sheet.append(track_to_row(track, max_composers))
+        row = track_to_row(track, max_composers)
+        if include_coventures:
+            sub_categories = list(track.get("sub_categories", []))[:3]
+            row.extend([bool(track.get("coventures")), track.get("category", ""),
+                        *(sub_categories + [""] * (3 - len(sub_categories))), track.get("album_description", "")])
+        sheet.append(row)
 
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = sheet.dimensions
@@ -1620,7 +1678,9 @@ def build_excel_workbook(tracks: list[dict[str, object]]) -> bytes:
 
     for col_idx in range(len(BASE_HEADERS) + 1, len(headers) + 1):
         header = headers[col_idx - 1]
-        if header.startswith("DSP Links (Spotify, Apple Music) "):
+        if header == "Album Description":
+            width = 60
+        elif header.startswith("DSP Links (Spotify, Apple Music) "):
             width = 34
         elif header.startswith("CAE/IPI "):
             width = 16
@@ -2044,6 +2104,10 @@ def parse_imported_workbook(file_bytes: bytes) -> dict[str, object]:
                 "producer": compact_text(
                     imported_row_value(row_values, header_index, "WCPM Producer")
                 ),
+                "coventures": compact_text(imported_row_value(row_values, header_index, "CoVentures")).casefold() in {"true", "yes", "1"},
+                "category": compact_text(imported_row_value(row_values, header_index, "Category")),
+                "sub_categories": [value for n in range(1, 4) if (value := compact_text(imported_row_value(row_values, header_index, f"Sub-Category {n}")))],
+                "album_description": clean_multiline_text(imported_row_value(row_values, header_index, "Album Description")),
                 "track_number": read_integer_cell(
                     imported_row_value(row_values, header_index, "Track Number")
                 ),
@@ -2113,7 +2177,14 @@ def build_import_state(imported_workbook: dict[str, object]) -> dict[str, object
         "album_name": imported_workbook["album_name"],
         "producer": imported_workbook["producer"],
         "track_count": len(tracks),
+        "coventures": bool(tracks[0].get("coventures", False)),
+        "album_category": tracks[0].get("category") or None,
+        "album_sub_categories": list(tracks[0].get("sub_categories", [])),
+        "album_description": tracks[0].get("album_description", ""),
+        "_producer_before_coventures": "",
     }
+    if state_updates["coventures"]:
+        state_updates["producer"] = "None"
 
     for track_number, track in enumerate(tracks, start=1):
         key_text = compact_text(track["key"])
@@ -2188,6 +2259,10 @@ def build_default_form_state() -> dict[str, object]:
         "album_name": "",
         "producer": "",
         "track_count": 1,
+        "coventures": False,
+        "album_category": None,
+        "album_sub_categories": [],
+        "album_description": "",
         "show_track_info_import": False,
         "_composer_lookup": {},
         "_show_export_success_dialog": False,
@@ -2333,6 +2408,17 @@ def validation_messages(tracks: list[dict[str, object]]) -> list[str]:
         messages.append("Album Name is required.")
     if not tracks[0]["producer"]:
         messages.append("WCPM Producer is required.")
+
+    if tracks[0].get("coventures"):
+        try:
+            categories, sub_categories = load_coventures_options(COVENTURES_KEY_PATH.stat().st_mtime_ns)
+        except Exception:
+            categories, sub_categories = [], []
+        if tracks[0].get("category") not in categories:
+            messages.append("CoVentures: choose one Category.")
+        selected = tracks[0].get("sub_categories", [])
+        if len(selected) != 3 or len(set(selected)) != 3 or any(value not in sub_categories for value in selected):
+            messages.append("CoVentures: choose exactly three Sub-Categories.")
 
     for track in tracks:
         track_number = track["track_number"]
