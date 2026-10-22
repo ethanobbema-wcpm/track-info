@@ -1079,13 +1079,13 @@ def render_header_fields() -> int:
     coventures = st.session_state["coventures"]
     if coventures:
         st.session_state["producer"] = "None"
-    header_row = st.columns([2.2, 1.6, 0.75, 0.45])
+    header_row = st.columns([1.8, 1.6, 1.15, 0.45])
     with header_row[0]:
         st.text_input("Album Name:", key="album_name")
     with header_row[1]:
         st.text_input("WCPM Producer:", key="producer", disabled=coventures)
     with header_row[2]:
-        st.checkbox("CoVentures", key="coventures", on_change=toggle_coventures)
+        st.checkbox("CoVentures & Affiliates", key="coventures", on_change=toggle_coventures)
     with header_row[3]:
         track_count = st.number_input(
             "Track Count", min_value=1, max_value=200, step=1, format="%d", key="track_count",
